@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.venv-ha/
+.ruff_cache/
+
+# Local instructions, notes, and installation documentation
+AGENTS.md
+docs/
