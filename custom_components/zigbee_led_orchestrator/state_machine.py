@@ -35,9 +35,7 @@ class StateMachine:
             self._phase = Phase.APPLYING
         elif event == Event.FAILED and current != Phase.OFF:
             self._phase = Phase.ERROR
-        elif event == Event.POWER_REQUESTED and (
-            current in (Phase.OFF, Phase.ERROR) or self._turning_off
-        ):
+        elif event == Event.POWER_REQUESTED:
             self._turning_off = False
             self._phase = Phase.POWERING
         elif event == Event.POWER_CONFIRMED and current == Phase.POWERING:

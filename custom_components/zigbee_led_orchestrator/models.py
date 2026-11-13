@@ -229,6 +229,8 @@ class LightObservation:
     relay_received_at: float | None = None
     led_received_at: float | None = None
     power_started_at: float | None = None
+    # Receipt time of a trusted ON→OFF report, not a physical switching timestamp.
+    power_off_at: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

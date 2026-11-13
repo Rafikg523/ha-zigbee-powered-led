@@ -108,6 +108,7 @@ class ObservationStore:
                     relay_retained=None,
                     relay_received_at=None,
                     power_started_at=None,
+                    power_off_at=None,
                 )
             )
         return self._bridge_epoch
@@ -165,6 +166,7 @@ class ObservationStore:
                         relay_retained=event.retained,
                         relay_received_at=event.received_at,
                         power_started_at=None,
+                        power_off_at=None,
                     )
                 )
                 return record.snapshot != previous
@@ -183,6 +185,7 @@ class ObservationStore:
                         relay_retained=True,
                         relay_received_at=event.received_at,
                         power_started_at=None,
+                        power_off_at=None,
                     )
                 )
                 return record.snapshot != previous
@@ -198,6 +201,7 @@ class ObservationStore:
             relay_received_at=event.received_at,
         )
         if trusted and event.state == SwitchState.ON:
+            current = replace(current, power_off_at=None)
             if (
                 record.confirmed_power != SwitchState.ON
                 or record.power_started_at is None
@@ -212,7 +216,19 @@ class ObservationStore:
             # Even uncertain OFF/UNKNOWN invalidates readiness; only trusted OFF
             # can become confirmed evidence for a later state-machine decision.
             current = _clear_led(current)
+            if trusted and event.state == SwitchState.OFF:
+                if record.confirmed_power == SwitchState.ON:
+                    current = replace(current, power_off_at=event.received_at)
+                elif record.confirmed_power != SwitchState.OFF:
+                    current = replace(current, power_off_at=None)
+            else:
+                current = replace(current, power_off_at=None)
             record.confirmed_power = SwitchState.OFF if trusted else SwitchState.UNKNOWN
+            record.power_started_at = None
+        elif not trusted:
+            # An untrusted ON can invalidate a prior OFF, but cannot establish ON.
+            current = _clear_led(replace(current, power_off_at=None))
+            record.confirmed_power = SwitchState.UNKNOWN
             record.power_started_at = None
         record.snapshot = replace(current, power_started_at=record.power_started_at)
         return record.snapshot != previous
