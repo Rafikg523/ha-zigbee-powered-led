@@ -1,6 +1,8 @@
 # Plan implementacji
 
-Status: plan; wszystkie zadania oczekują na realizację. Kolejność odpowiada zależnościom. Specyfikacja v0.1 jest źródłem szczegółowych wymagań i macierzy T01–T16.
+Szczegółowe zadania P00–P18, kontrakty modułów i kryteria odbioru: [plan wykonawczy dla agentów](docs/superpowers/plans/2026-11-13-zigbee-led-orchestrator.md). Bieżący stan i raporty przekazania: [PROGRESS.md](docs/superpowers/plans/PROGRESS.md).
+
+Status: przygotowano szkielet repozytorium HACS; implementacja integracji i pozostałe zadania oczekują na realizację. Kolejność odpowiada zależnościom. Specyfikacja v0.1 jest źródłem szczegółowych wymagań i macierzy T01–T16.
 
 ## 0. Inwentaryzacja i bezpieczeństwo
 
@@ -49,7 +51,7 @@ Status: plan; wszystkie zadania oczekują na realizację. Kolejność odpowiada 
 - [ ] Obsłużyć nakładające się grupy, konflikty zasobów i stale zasilane lampy; nie wysyłać grupowej komendy zmieniającej niezamierzonych członków.
 - [ ] Pokryć T09–T15, w tym konflikt grup, zmianę członkostwa i ROOM_OFF podczas rozruchu.
 - [ ] Dodać config/options flow, walidację, migracje, tłumaczenia PL, usługi resync/diagnose/pause/resume oraz dokumentację instalacji.
-- [ ] Rozważyć HACS i automatyczne strojenie czasów dopiero po zebraniu danych.
+- [ ] Przygotować wydanie i zgłoszenie do katalogu HACS po ukończeniu i weryfikacji integracji; automatyczne strojenie czasów rozważyć po zebraniu danych.
 
 ## Zasady przez cały projekt
 
