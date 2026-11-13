@@ -20,7 +20,7 @@ Stan opisany przy aktualizacji dokumentu: **P00–P05 zakończone, P06 rozpoczę
 | `observation_store.py` | Raporty przekaźnika/LED/mostka, jakość danych, `power_epoch` i `bridge_epoch` | Istnieje |
 | `command_arbiter.py` | Aktualność poleceń, priorytet OFF, ograniczanie i koordynacja wysyłek, kwarantanna niepewnej publikacji | Istnieje; integracja z rzeczywistym HA MQTT jest do sprawdzenia |
 | `power_manager.py` | Konserwatywna ocena gotowości na podstawie danych i minimalnego czasu rozruchu | Częściowo: `is_ready`; reszta P06 oczekuje |
-| `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Planowane w P06 |
+| `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Podstawowe przejścia faz istnieją; reconciler pozostaje do wykonania w P06 |
 | `mqtt_adapter.py`, `topology.py` | Połączenie przez MQTT HA i weryfikacja topologii Z2M | Planowane w P08 |
 | `runtime.py`, `config_flow.py`, `light.py`, sensory diagnostyczne | Cykl życia integracji, konfiguracja i encje HA | Planowane w P09–P12 |
 | `group_coordinator.py`, `room_coordinator.py` | Gotowość członków, polecenia grupowe i pokojowe | Planowane w P11 i P15 |

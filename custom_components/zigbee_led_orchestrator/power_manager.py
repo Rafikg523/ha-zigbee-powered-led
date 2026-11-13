@@ -19,7 +19,7 @@ def is_ready(
         raise ValueError("times must be finite")
     if boot_grace_seconds < 0:
         raise ValueError("boot_grace_seconds must not be negative")
-    relay_at = observation.relay_received_at
+    relay_at = observation.power_started_at
     led_at = observation.led_received_at
     return bool(
         observation.power_epoch > 0
@@ -29,6 +29,8 @@ def is_ready(
         and observation.relay_retained is False
         and observation.led_retained is False
         and relay_at is not None
+        and observation.relay_received_at is not None
+        and observation.relay_received_at <= now
         and led_at is not None
         and relay_at < led_at <= now
         and now - relay_at >= boot_grace_seconds

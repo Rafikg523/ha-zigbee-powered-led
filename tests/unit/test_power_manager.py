@@ -19,6 +19,7 @@ def observation():
         relay_quality=EvidenceQuality.DEVICE_REPORT,
         led_quality=EvidenceQuality.DEVICE_REPORT,
         relay_received_at=10.0,
+        power_started_at=10.0,
         led_received_at=11.0,
         relay_retained=False,
         led_retained=False,
@@ -41,3 +42,29 @@ def test_cached_or_unverifiable_evidence_never_proves_readiness():
         {"led_received_at": 9.0},
     ):
         assert not is_ready(replace(item, **change), now=20, boot_grace_seconds=2.5)
+
+
+def test_repeated_relay_report_does_not_restart_boot_or_invalidate_led():
+    from custom_components.zigbee_led_orchestrator.models import (
+        LedObservation,
+        RelayObservation,
+    )
+    from custom_components.zigbee_led_orchestrator.observation_store import (
+        ObservationStore,
+    )
+
+    store = ObservationStore({"led": "relay"})
+    store.ingest(
+        RelayObservation(
+            "relay", SwitchState.ON, 10, False, EvidenceQuality.DEVICE_REPORT
+        )
+    )
+    store.ingest(
+        LedObservation("led", SwitchState.ON, 11, False, EvidenceQuality.DEVICE_REPORT)
+    )
+    store.ingest(
+        RelayObservation(
+            "relay", SwitchState.ON, 12, False, EvidenceQuality.DEVICE_REPORT
+        )
+    )
+    assert is_ready(store.snapshot("led"), now=12.5, boot_grace_seconds=2.5)

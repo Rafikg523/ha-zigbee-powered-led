@@ -228,6 +228,7 @@ class LightObservation:
     color_temp_kelvin: int | None = None
     relay_received_at: float | None = None
     led_received_at: float | None = None
+    power_started_at: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -107,6 +107,7 @@ class ObservationStore:
                     relay_quality=_UNKNOWN,
                     relay_retained=None,
                     relay_received_at=None,
+                    power_started_at=None,
                 )
             )
         return self._bridge_epoch
@@ -163,6 +164,7 @@ class ObservationStore:
                         relay_quality=_UNKNOWN,
                         relay_retained=event.retained,
                         relay_received_at=event.received_at,
+                        power_started_at=None,
                     )
                 )
                 return record.snapshot != previous
@@ -180,6 +182,7 @@ class ObservationStore:
                         relay_quality=_UNKNOWN,
                         relay_retained=True,
                         relay_received_at=event.received_at,
+                        power_started_at=None,
                     )
                 )
                 return record.snapshot != previous
@@ -211,8 +214,8 @@ class ObservationStore:
             current = _clear_led(current)
             record.confirmed_power = SwitchState.OFF if trusted else SwitchState.UNKNOWN
             record.power_started_at = None
-        record.snapshot = current
-        return current != previous
+        record.snapshot = replace(current, power_started_at=record.power_started_at)
+        return record.snapshot != previous
 
     def _ingest_led(self, record: _LightRecord, event: LedObservation) -> bool:
         if _older_or_equal(event.received_at, record.led_watermark):
