@@ -209,6 +209,11 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
     raw_policy = _mapping(root.get("policies"), "policies", policy_fields)
     policies: dict[str, object] = {}
     for key, value in raw_policy.items():
+        if key == "restore_parameters":
+            if type(value) is not bool:
+                raise ValueError("policies.restore_parameters must be boolean")
+            policies[key] = value
+            continue
         if key in {"startup_restore_power", "z2m_set_retain"}:
             if value is not False:
                 raise ValueError(f"policies.{key} must be false")

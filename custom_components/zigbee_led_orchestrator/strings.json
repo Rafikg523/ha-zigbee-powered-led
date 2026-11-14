@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Zigbee2MQTT",
+        "description": "Read the existing device and group catalog through Home Assistant MQTT. No commands are sent.",
+        "data": {
+          "base_topic": "Zigbee2MQTT base topic"
+        }
+      },
+      "mapping": {
+        "title": "Map two circuits",
+        "description": "Select LED controllers, relay channels and an existing group from the catalog. Enter verified temperature ranges and timing values.",
+        "data": {
+          "light_1": "LED controller 1 and endpoint",
+          "light_2": "LED controller 2 and endpoint",
+          "relay_1": "LED 1 power relay channel",
+          "relay_2": "LED 2 power relay channel",
+          "group": "Existing Zigbee2MQTT group",
+          "min_kelvin_1": "LED 1 minimum color temperature (K)",
+          "max_kelvin_1": "LED 1 maximum color temperature (K)",
+          "min_kelvin_2": "LED 2 minimum color temperature (K)",
+          "max_kelvin_2": "LED 2 maximum color temperature (K)",
+          "min_send_interval_ms": "Minimum send interval (ms)",
+          "publication_timeout_ms": "Publication timeout (ms)"
+        }
+      }
+    },
+    "error": {
+      "invalid_mapping": "The configuration or physical mapping is invalid.",
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
+    },
+    "abort": {
+      "single_instance": "Only one Zigbee LED Orchestrator instance is supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Control mode",
+        "description": "Enable active control only when this integration is the sole operational writer for the managed devices. Enabling does not restore previous commands.",
+        "data": {
+          "active": "Enable active control"
+        }
+      }
+    },
+    "error": {
+      "control_unavailable": "Control cannot be enabled until the bridge and a valid topology are available."
+    }
+  }
+}

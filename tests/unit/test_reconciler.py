@@ -231,7 +231,7 @@ async def test_power_epoch_change_during_boot_never_sends_old_led_intent(rig):
     led(observations, engine, clock)
     await clock.advance(3)
     assert len(transport.sent) == 1
-    assert engine.snapshot("led").phase == Phase.ERROR
+    assert engine.snapshot("led").phase == Phase.ON
 
 
 async def test_explicit_off_with_unchanged_desired_and_observed_on_sends_off(rig):
@@ -377,3 +377,221 @@ async def test_untrusted_on_invalidates_prior_known_off_transition(rig):
     await clock.advance(0.01)
     relay(observations, engine, clock, SwitchState.OFF)
     assert observations.snapshot("led").power_off_at is None
+
+
+async def test_slider_updates_do_not_extend_readiness_deadline(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    for value in range(1, 9):
+        await clock.advance(0.9)
+        engine.submit(("led",), IntentPatch(brightness=value), source="slider")
+    await clock.advance(0.81)
+    assert len(transport.sent) == 1
+    assert engine.snapshot("led").phase == Phase.ERROR
+    assert engine.snapshot("led").reason == "readiness_timeout"
+
+
+async def test_boot_grace_boundary_requires_evidence_and_full_interval(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True, brightness=120), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=100)
+    await clock.advance(2.489)
+    assert len(transport.sent) == 1
+    assert engine.snapshot("led").phase == Phase.WAITING_READY
+    await clock.advance(0.002)
+    assert engine.snapshot("led").phase == Phase.APPLYING
+    await clock.advance(0.12)
+    assert len(transport.sent) == 2
+
+
+async def test_readiness_timeout_boundary_without_led_evidence(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(7.999)
+    assert engine.snapshot("led").phase == Phase.WAITING_READY
+    await clock.advance(0.002)
+    assert engine.snapshot("led").phase == Phase.ERROR
+    assert engine.snapshot("led").reason == "readiness_timeout"
+    assert len(transport.sent) == 1
+
+
+async def test_parameter_changes_while_turning_off_do_not_repeat_relay_off(rig):
+    clock, transport, observations, engine = rig
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    for value in range(1, 6):
+        engine.submit(("led",), IntentPatch(brightness=value), source="slider")
+        await clock.advance(0.01)
+    assert [p.payload for p in transport.sent] == [{"state_l1": "OFF"}]
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").phase == Phase.OFF
+
+
+async def test_off_preference_change_does_not_publish(rig):
+    clock, transport, _, engine = rig
+    engine.submit(("led",), IntentPatch(brightness=42), source="slider")
+    await clock.advance(1)
+    assert not transport.sent
+    assert engine.snapshot("led").desired.brightness == 42
+
+
+async def test_parameter_changes_do_not_extend_off_confirmation_deadline(rig):
+    clock, transport, observations, engine = rig
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    for value in range(1, 11):
+        await clock.advance(0.25)
+        engine.submit(("led",), IntentPatch(brightness=value), source="slider")
+    await clock.advance(0.5)
+    assert len(transport.sent) == 1
+    assert engine.snapshot("led").reason == "relay_confirmation_timeout"
+
+
+async def test_zero_brightness_turns_off_an_on_light(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock)
+    await clock.advance(2.6)
+    engine.submit(("led",), IntentPatch(brightness=0), source="ui")
+    await clock.advance(0.01)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+
+
+async def test_new_off_after_previous_confirmation_sends_again(rig):
+    clock, transport, observations, engine = rig
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    assert [p.payload for p in transport.sent] == [
+        {"state_l1": "OFF"},
+        {"state_l1": "OFF"},
+    ]
+
+
+async def test_on_after_unconfirmed_off_waits_for_off_evidence(rig):
+    clock, transport, observations, engine = rig
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=10)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(3.1)
+    assert engine.snapshot("led").reason == "relay_confirmation_timeout"
+    engine.submit(("led",), IntentPatch(on=True, brightness=100), source="ui")
+    await clock.advance(0.2)
+    assert [p.payload for p in transport.sent] == [{"state_l1": "OFF"}]
+
+
+async def test_suspending_control_revokes_pending_on_and_requires_new_intent(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    engine.set_enabled(False)
+    assert engine.snapshot("led").desired.on is False
+    with pytest.raises(RuntimeError):
+        engine.submit(("led",), IntentPatch(on=True), source="ui")
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(5)
+    assert len(transport.sent) == 1
+    engine.set_enabled(True)
+    await clock.advance(1)
+    assert len(transport.sent) == 1
+    assert engine.snapshot("led").desired.on is False
+
+
+async def test_device_brightness_range_is_used_for_set_and_confirmation(rig):
+    from custom_components.zigbee_led_orchestrator.light_capabilities import (
+        LightCapabilities,
+    )
+
+    clock, transport, observations, engine = rig
+    engine.set_capabilities("led", LightCapabilities((1, 100), (200, 400)))
+    engine.submit(
+        ("led",),
+        IntentPatch(on=True, brightness=255, color_temp_kelvin=10000),
+        source="ui",
+    )
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock)
+    await clock.advance(2.7)
+    assert transport.sent[-1].payload == {
+        "state": "ON",
+        "brightness": 100,
+        "color_temp": 200,
+        "transition": 0,
+    }
+    led(observations, engine, clock, brightness=100, kelvin=5000)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").confirmed
+
+
+async def test_unsupported_parameters_are_rejected_before_updating_intent(rig):
+    from custom_components.zigbee_led_orchestrator.light_capabilities import (
+        LightCapabilities,
+    )
+
+    _, _, _, engine = rig
+    engine.set_capabilities("led", LightCapabilities(None, None))
+    with pytest.raises(ValueError):
+        engine.submit(("led",), IntentPatch(on=True, brightness=100), source="ui")
+    assert engine.snapshot("led").desired.on is False
+
+
+async def test_external_on_while_observing_does_not_arm_future_control(rig):
+    clock, transport, observations, engine = rig
+    engine.set_enabled(False)
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    assert not engine.snapshot("led").desired.on
+    engine.set_enabled(True)
+    await clock.advance(5)
+    assert not transport.sent
+    assert not engine.snapshot("led").desired.on
+
+
+async def test_disabling_does_not_forget_off_in_flight(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock)
+    await clock.advance(2.7)
+    before = len(transport.sent)
+    transport.hold()
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+    engine.set_enabled(False)
+    engine.set_enabled(True)
+    engine.submit(("led",), IntentPatch(on=True, brightness=123), source="ui")
+    await clock.advance(0.2)
+    assert len(transport.sent) == before + 1
+    transport.release()
+    await clock.advance(0.2)
+    assert len(transport.sent) == before + 1

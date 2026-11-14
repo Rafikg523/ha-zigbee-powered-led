@@ -287,6 +287,7 @@ class PolicyConfig:
     relay_command_timeout_ms: int = 3000
     z2m_set_retain: bool = False
     startup_restore_power: bool = False
+    restore_parameters: bool = False
 
 
 @dataclass(frozen=True, slots=True)

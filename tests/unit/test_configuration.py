@@ -108,6 +108,14 @@ class TestConfiguration(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, field):
                     self.validate(config)
 
+    def test_restore_parameters_requires_boolean(self):
+        config = valid_config()
+        config["policies"]["restore_parameters"] = "true"
+        with self.assertRaisesRegex(ValueError, "restore_parameters"):
+            self.validate(config)
+        config["policies"]["restore_parameters"] = True
+        self.assertTrue(self.validate(config).policies.restore_parameters)
+
     def test_group_overlap_rejected_for_mvp(self):
         config = valid_config()
         config["groups"].append({"id": "group_b", "z2m_id": 2, "members": ["light_a"]})

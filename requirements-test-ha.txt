@@ -1,3 +1,5 @@
 -r requirements-test-core.txt
 # This official test package pins Home Assistant to the matching release.
 pytest-homeassistant==2026.11.0
+# MQTT config flow imports the Supervisor integration in this HA release.
+aiohasupervisor==0.8.1
