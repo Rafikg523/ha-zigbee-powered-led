@@ -3,20 +3,10 @@
     "step": {
       "user": {
         "title": "Connect Zigbee2MQTT",
-        "description": "Read the existing catalog through Home Assistant MQTT. The report extension is optional for setup and required for active pilot testing. No device commands are sent.",
+        "description": "Installation only connects to the existing catalog. Circuits and groups are added afterwards from Configure. The report extension is optional here and required for active pilot testing. These timings are shared by every circuit. No device commands are sent.",
         "data": {
           "base_topic": "Zigbee2MQTT base topic",
-          "report_extension": "Use Zigbee2MQTT report extension (see installation guide)"
-        }
-      },
-      "mapping": {
-        "title": "Map one circuit",
-        "description": "Name the virtual light, then select one LED controller and its power channel. Leave the group name empty to control circuits individually. A name such as Salon creates a Zigbee2MQTT group and a light entity called Salon_orchestrator. Each circuit added later joins that group. These timings are shared. Setup starts in observation mode.",
-        "data": {
-          "name": "Virtual entity name",
-          "light": "LED controller and endpoint",
-          "relay": "Power relay channel",
-          "group_name": "Group name (optional; empty means no group)",
+          "report_extension": "Use Zigbee2MQTT report extension (see installation guide)",
           "min_send_interval_ms": "Minimum send interval (ms)",
           "publication_timeout_ms": "Publication timeout (ms)",
           "boot_grace_ms": "Minimum boot grace (ms, requires calibration)",
@@ -31,17 +21,18 @@
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
     },
     "abort": {
-      "single_instance": "Only one Zigbee LED Orchestrator instance is supported. Add another circuit from Configure on the existing entry."
+      "single_instance": "Only one Zigbee LED Orchestrator instance is supported. Add circuits and groups from Configure on the existing entry."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Zigbee LED Orchestrator",
-        "description": "Change the control mode or add another switch and controller pair. Adding a circuit reloads the integration and returns it to observation mode. The new circuit joins the group when one was named during setup.",
+        "title": "Configure",
+        "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration and returns it to observation mode.",
         "menu_options": {
-          "control": "Control mode",
-          "add_circuit": "Add circuit"
+          "add_circuit": "Add circuit",
+          "create_group": "Create group",
+          "control": "Control mode"
         }
       },
       "control": {
@@ -53,11 +44,19 @@
       },
       "add_circuit": {
         "title": "Add circuit",
-        "description": "Name the virtual light and select one controller with its power channel. Timing settings stay as they are. Saving reloads the integration and returns it to observation mode. The new circuit joins the existing group when one was configured.",
+        "description": "Name the virtual light and select one controller with its power channel. This does not add the circuit to a group. Saving reloads the integration and returns it to observation mode.",
         "data": {
           "name": "Virtual entity name",
           "light": "LED controller and endpoint",
           "relay": "Power relay channel"
+        }
+      },
+      "create_group": {
+        "title": "Create group",
+        "description": "Name the group and select which added circuits belong to it. A name such as Salon creates the Zigbee2MQTT group and light entity Salon_orchestrator. A circuit already in another group is not listed. Saving reloads the integration and returns it to observation mode.",
+        "data": {
+          "name": "Group name",
+          "members": "Circuits in this group"
         }
       }
     },
@@ -65,12 +64,15 @@
       "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change.",
       "invalid_mapping": "The configuration or physical mapping is invalid.",
       "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
+      "invalid_group_name": "The group name is empty, too long, or contains characters Zigbee2MQTT cannot use.",
+      "need_two_members": "Select at least two circuits for the group.",
       "already_mapped": "That name, controller, or relay channel is already used.",
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
     },
     "abort": {
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
-      "no_free_circuit": "Every discovered controller or relay channel is already mapped."
+      "no_free_circuit": "Every discovered controller or relay channel is already mapped.",
+      "need_two_circuits": "Add at least two circuits that are not already in a group."
     }
   },
   "services": {

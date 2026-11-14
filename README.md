@@ -2,14 +2,14 @@
 
 Integracja Home Assistant dla kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Obwody dodaje się po jednej parze. Opcjonalnie sama zakłada grupę Zigbee2MQTT o nazwie kończącej się na `_orchestrator` i steruje nią dodane LED-y.
 
-**Wersja testowa 0.1.0b6:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
+**Wersja testowa 0.1.0b7:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
 
 ## Instalacja i konfiguracja
 
-1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b6` lub pobierz aktualną wersję z domyślnej gałęzi.
+1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b7` lub pobierz aktualną wersję z domyślnej gałęzi.
 2. Zainstaluj i uruchom ponownie Home Assistanta.
-3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**.
-4. Wskaż bazowy temat Z2M, nazwę wirtualnej encji, jeden kontroler i jego kanał zasilania. Nazwa grupy jest opcjonalna. Podana nazwa, na przykład `Salon`, tworzy grupę Z2M i encję `Salon_orchestrator`. Kolejny obwód dodasz w **Konfiguruj → Dodaj obwód**; dołącza on do tej grupy.
+3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**. Instalacja pyta tylko o temat Zigbee2MQTT i wspólne czasy.
+4. Obwód dodasz w **Konfiguruj → Dodaj obwód**: nazwa encji, kontroler i kanał. Grupę utworzysz w **Konfiguruj → Utwórz grupę**: nazwa, na przykład `Salon`, i wybór już dodanych obwodów. Powstaje grupa i encja `Salon_orchestrator`.
 5. Integracja uruchomi się w **OBSERVE**. Przygotowanie aktywnego pilotażu, rozszerzenie raportów Z2M i procedura prób opisane są w [INSTALLATION.md](INSTALLATION.md) i [TESTING.md](TESTING.md).
 
 Przed wyjazdem możesz zakończyć instalację i mapowanie. Przed aktywacją na miejscu potrzebne są poprawne mapowanie, kopia i rollback oraz wyłączenie innych ścieżek sterowania wybranymi obwodami.
@@ -29,6 +29,6 @@ Zwykłe stany Z2M mogą zawierać cache lub optymistyczne aktualizacje. Aktywne 
 
 Cel testowy: **Home Assistant 2026.11.0**, istniejąca integracja MQTT i **Zigbee2MQTT 2.14.3**. Starsze wersje nie zostały zweryfikowane. HA używa wyłącznie swojego klienta MQTT. Rozszerzenie Z2M wymaga obsługi zewnętrznego JavaScriptu, patrz instrukcja.
 
-Bieżący zakres to dowolna liczba obwodów z dedykowanymi kanałami w jednym wpisie i najwyżej jedna grupa. Grupa obejmuje obwody dodane po podaniu jej nazwy; nazwy grupy nie da się dopisać później bez usunięcia wpisu. Pokoje, nakładające się grupy, stale zasilane LED-y i edycja już zapisanej pary są dalszymi etapami. Zmiana istniejącej pary wymaga usunięcia wpisu i dodania go ponownie; zapisz mapowanie wcześniej. Po restarcie, resync, dodaniu obwodu lub zmianie topologii ponownie jawnie włącz ACTIVE.
+Bieżący zakres to dowolna liczba obwodów z dedykowanymi kanałami w jednym wpisie. Grupa powstaje dopiero po dodaniu obwodów i obejmuje tylko te, które przy jej tworzeniu zaznaczysz. Obwód może należeć tylko do jednej grupy. Pokoje, nakładające się grupy, stale zasilane LED-y i edycja już zapisanej pary albo składu grupy są dalszymi etapami. Zmiana istniejącej pary wymaga usunięcia wpisu i dodania go ponownie; zapisz mapowanie wcześniej. Po restarcie, resync, dodaniu obwodu, utworzeniu grupy lub zmianie topologii ponownie jawnie włącz ACTIVE.
 
 [Plan rozwoju](ROADMAP.md) · [Architektura](architecture.md) · [Zmiany](CHANGELOG.md)
