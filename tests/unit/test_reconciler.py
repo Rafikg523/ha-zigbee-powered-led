@@ -34,7 +34,10 @@ async def rig(request):
         led_resource="synthetic:led:endpoint1",
         relay_state_key="state_l1",
     )
-    policy = PolicyConfig(min_send_interval_ms=1, publication_timeout_ms=500)
+    policy = PolicyConfig(
+        min_send_interval_ms=200 if getattr(request, "param", False) == "slow" else 1,
+        publication_timeout_ms=500,
+    )
     engine = Reconciler(
         circuits=(circuit,),
         desired=desired,
@@ -43,7 +46,7 @@ async def rig(request):
         clock=clock,
         policy=policy,
         enabled=True,
-        probe_enabled=getattr(request, "param", False),
+        probe_enabled=bool(getattr(request, "param", False)),
     )
     if not getattr(request, "param", False):
         observations.ingest(
@@ -767,3 +770,184 @@ async def test_new_on_after_readiness_timeout_sends_fresh_led_read(rig):
     assert len(transport.sent) == before + 1
     assert transport.sent[-1].topic == "example/led/get"
     assert sum(x.payload == {"state_l1": "ON"} for x in transport.sent) == 1
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_off_confirms_led_before_cutting_relay_and_keeps_preferences(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=False, brightness=180), source="ui")
+    await clock.advance(0.01)
+    assert [(x.topic, x.payload) for x in transport.sent] == [
+        ("example/led/set", {"state": "OFF", "transition": 0}),
+        ("example/led/get", {"state": ""}),
+    ]
+    delta = observations.ingest(
+        LedObservation(
+            "led", SwitchState.OFF, clock.now(), False, EvidenceQuality.DEVICE_REPORT
+        )
+    )
+    engine.notify(delta)
+    await clock.advance(0.01)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").confirmed
+    assert engine.snapshot("led").desired.brightness == 180
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_unconfirmed_led_off_cuts_power_after_bounded_wait(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(1.9)
+    assert not any(x.topic == "example/relay/set" for x in transport.sent)
+    await clock.advance(0.2)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").phase == Phase.OFF
+    assert engine.snapshot("led").reason == "led_off_confirmation_timeout"
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_new_on_cancels_old_power_cut_after_led_off(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=True, brightness=50), source="ui")
+    await clock.advance(0.01)
+    engine.notify(
+        observations.ingest(
+            LedObservation(
+                "led",
+                SwitchState.OFF,
+                clock.now(),
+                False,
+                EvidenceQuality.DEVICE_REPORT,
+            )
+        )
+    )
+    await clock.advance(3)
+    assert not any(x.payload == {"state_l1": "OFF"} for x in transport.sent)
+    assert engine.snapshot("led").desired.on
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_parameter_changes_share_led_off_and_do_not_extend_deadline(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    for brightness in range(1, 11):
+        await clock.advance(0.1)
+        engine.submit(("led",), IntentPatch(brightness=brightness), source="ui")
+    await clock.advance(1.1)
+    assert (
+        sum(x.payload == {"state": "OFF", "transition": 0} for x in transport.sent) == 1
+    )
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_cached_led_off_does_not_confirm_graceful_shutdown(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    engine.notify(
+        observations.ingest(
+            LedObservation(
+                "led", SwitchState.OFF, clock.now(), True, EvidenceQuality.CACHE
+            )
+        )
+    )
+    await clock.advance(0.1)
+    assert not any(x.topic == "example/relay/set" for x in transport.sent)
+    await clock.advance(2)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_failed_led_off_still_cuts_power(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    transport.fail_next(RuntimeError("synthetic LED failure"))
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").reason == "led_off_failed"
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_off_report_before_led_publication_completes_is_not_confirmation(rig):
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    transport.hold()
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    engine.notify(
+        observations.ingest(
+            LedObservation(
+                "led",
+                SwitchState.OFF,
+                clock.now(),
+                False,
+                EvidenceQuality.DEVICE_REPORT,
+            )
+        )
+    )
+    transport.release()
+    await clock.advance(0.01)
+    assert not any(x.topic == "example/relay/set" for x in transport.sent)
+    engine.notify(
+        observations.ingest(
+            LedObservation(
+                "led",
+                SwitchState.OFF,
+                clock.now(),
+                False,
+                EvidenceQuality.DEVICE_REPORT,
+            )
+        )
+    )
+    await clock.advance(0.01)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}
+
+
+@pytest.mark.parametrize("rig", ["slow"], indirect=True)
+async def test_parameter_change_before_led_off_dispatch_keeps_graceful_sequence(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)  # Initial relay read occupies the send interval.
+    relay(observations, engine, clock, SwitchState.ON)
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    engine.submit(("led",), IntentPatch(brightness=123), source="ui")
+    await clock.advance(0.5)
+    assert any(x.payload == {"state": "OFF", "transition": 0} for x in transport.sent)
+    assert transport.sent[-1].topic == "example/led/get"
+    assert not any(x.topic == "example/relay/set" for x in transport.sent)
+    engine.notify(
+        observations.ingest(
+            LedObservation(
+                "led",
+                SwitchState.OFF,
+                clock.now(),
+                False,
+                EvidenceQuality.DEVICE_REPORT,
+            )
+        )
+    )
+    await clock.advance(0.2)
+    assert transport.sent[-1].payload == {"state_l1": "OFF"}

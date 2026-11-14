@@ -11,6 +11,7 @@ COUNTERS = (
     "relay_on",
     "relay_off",
     "led_set",
+    "led_off",
     "group_set",
     "probes",
     "timeouts",

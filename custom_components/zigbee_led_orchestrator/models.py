@@ -51,6 +51,7 @@ class CommandKind(StrEnum):
     RELAY_ON = "RELAY_ON"
     RELAY_OFF = "RELAY_OFF"
     LED_SET = "LED_SET"
+    LED_OFF = "LED_OFF"
     GROUP_SET = "GROUP_SET"
     PROBE = "PROBE"
 
