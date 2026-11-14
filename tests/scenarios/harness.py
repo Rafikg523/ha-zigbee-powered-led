@@ -30,7 +30,7 @@ from tests.unit.test_configuration import valid_config
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "z2m" / "pilot_synthetic.json"
 RELAY = "zigbee2mqtt/room/relay"
 LED = {"light_a": "zigbee2mqtt/room/led1", "light_b": "zigbee2mqtt/room/led2"}
-GROUP = "zigbee2mqtt/room/group"
+GROUP = "zigbee2mqtt/group_a_orchestrator"
 
 
 def load_pilot() -> dict:
@@ -179,14 +179,23 @@ class Rig:
             return_response=name == "diagnose",
         )
 
-    def publications(self) -> list[tuple[str, dict]]:
-        """Return every MQTT publication as (topic, payload), asserting no retain."""
+    def _publications(self) -> list[tuple[str, dict]]:
         result = []
         for call in self.mqtt_mock.async_publish.call_args_list:
             topic, payload, _qos, retain = call.args[:4]
             assert retain is False, f"retained command to {topic}"
             result.append((topic, json.loads(payload)))
         return result
+
+    def publications(self) -> list[tuple[str, dict]]:
+        """Return device and report-session publications, never bridge administration."""
+        return [
+            item for item in self._publications() if "/bridge/request/" not in item[0]
+        ]
+
+    def admin_publications(self) -> list[tuple[str, dict]]:
+        """Return non-retained Zigbee2MQTT bridge requests."""
+        return [item for item in self._publications() if "/bridge/request/" in item[0]]
 
     def diagnostics(self) -> dict:
         return self.runtime.diagnostics()

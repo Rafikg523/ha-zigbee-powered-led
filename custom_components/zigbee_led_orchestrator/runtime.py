@@ -6,20 +6,31 @@ import asyncio
 import re
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from .const import RUNTIME_VERSION
 from .desired_store import DesiredStateStore
 from .group_coordinator import GroupCoordinator
+from .group_provisioner import (
+    CatalogGroup,
+    LightEndpoint,
+    next_group_action,
+    options_confirmed,
+    z2m_group_name,
+)
 from .light_capabilities import LightCapabilities
 from .metrics import Metrics
 from .models import (
     BridgeObservation,
     ControlMode,
     EffectiveState,
+    EvidenceQuality,
     GroupSnapshot,
     IntentPatch,
     LightSnapshot,
     Phase,
+    RelayObservation,
+    SwitchState,
 )
 from .observation_store import ObservationStore
 from .preferences import Preference
@@ -72,6 +83,12 @@ class Runtime:
         self._closed = False
         self._subscribers: set[Callable[[frozenset[str]], None]] = set()
         self._remove_topology = None
+        self.group_error: str | None = None
+        self._group_id_listener: Callable[[str, int], None] | None = None
+        self._options_ready: set[str] = set()
+        self._pending_groups: dict[str, int] = {}
+        self._provision_task: asyncio.Task | None = None
+        self._provision_again = False
 
     async def start(self) -> None:
         self._remove_topology = self.adapter.subscribe_topology(self._topology_changed)
@@ -88,6 +105,7 @@ class Runtime:
             self.adapter.set_active(False)
             self.mode = ControlMode.OBSERVE
         self._announce(frozenset(light.id for light in self.config.lights))
+        self._schedule_provision()
 
     def _observation(self, observation) -> None:
         delta = self._observations.ingest(observation)
@@ -100,6 +118,10 @@ class Runtime:
             self._engine.notify(delta)
         else:
             self._announce(delta.light_ids)
+        if isinstance(observation, RelayObservation) and self._relay_powered(
+            observation.channel_id
+        ):
+            self._schedule_provision()
 
     def _announce(self, ids: frozenset[str]) -> None:
         for callback in tuple(self._subscribers):
@@ -122,7 +144,7 @@ class Runtime:
             return LightCapabilities(None, None)
 
     def _make_engine(self) -> Reconciler:
-        validate_topology(self.config, self.adapter.topology)
+        validate_topology(self.config, self.adapter.topology, require_groups=False)
         channels = {channel.id: channel for channel in self.config.relay_channels}
         circuits = []
         for light in self.config.lights:
@@ -143,17 +165,24 @@ class Runtime:
         lights = {light.id: light for light in self.config.lights}
         groups = []
         for group in self.config.groups:
-            native = self.adapter.topology.resolve_group(group.z2m_id)
+            if not set(group.members) <= set(lights):
+                raise ValueError("group member is not a configured light")
+            found = self.adapter.topology.group_named(z2m_group_name(group.name))
+            expected = frozenset(
+                (lights[item].device_ieee.lower(), lights[item].endpoint)
+                for item in group.members
+            )
+            if found is None or found[1].members != expected:
+                continue
+            native_id, native = found
             groups.append(
                 GroupCircuit(
                     group.id,
                     native.topic + "/set",
-                    f"{self.config.base_topic}:group:{group.z2m_id}",
+                    f"{self.config.base_topic}:group:{native_id}",
                     group.members,
                 )
             )
-            if not set(group.members) <= set(lights):
-                raise ValueError("group member is not a configured light")
         engine = Reconciler(
             circuits=tuple(circuits),
             desired=self._desired,
@@ -169,6 +198,7 @@ class Runtime:
             engine,
             self._clock,
             barrier_ms=self.config.policies.group_barrier_timeout_ms,
+            members={group.id: group.members for group in self.config.groups},
         )
         for light in self.config.lights:
             device = self.adapter.topology.resolve_device(light.device_ieee)
@@ -195,6 +225,8 @@ class Runtime:
             self.adapter.set_active(False)
         self.mode = mode
         self._announce(frozenset(light.id for light in self.config.lights))
+        if mode == ControlMode.OBSERVE:
+            self._schedule_provision()
 
     def submit(self, light_ids: tuple[str, ...], patch: IntentPatch, *, source: str):
         if self.mode != ControlMode.ACTIVE or self._engine is None or self._closed:
@@ -211,6 +243,12 @@ class Runtime:
 
     def set_preferences_listener(self, listener: Callable[[], None] | None) -> None:
         self._preferences_listener = listener
+
+    def set_group_id_listener(
+        self, listener: Callable[[str, int], None] | None
+    ) -> None:
+        """Persist a discovered Zigbee group id. The listener must not publish."""
+        self._group_id_listener = listener
 
     def preferences(self) -> dict[str, Preference]:
         """Return current parameters only; power and commands are never included."""
@@ -250,9 +288,23 @@ class Runtime:
         return result
 
     def group_snapshot(self, group_id: str) -> GroupSnapshot:
-        if self._groups is not None:
-            return self._groups.snapshot(group_id)
         members = next(g.members for g in self.config.groups if g.id == group_id)
+        if (
+            self._groups is not None
+            and self._engine is not None
+            and group_id in self._engine.groups
+        ):
+            return self._groups.snapshot(group_id)
+        if self._engine is not None:
+            snapshots = [self._engine.snapshot(item) for item in members]
+            confirmed = sum(1 for item in snapshots if item.confirmed)
+            return GroupSnapshot(
+                any(item.desired.on for item in snapshots),
+                confirmed,
+                len(members),
+                confirmed == len(members),
+                all(item.available for item in snapshots),
+            )
         return GroupSnapshot(
             any(self._desired.get(item).on for item in members),
             0,
@@ -303,6 +355,8 @@ class Runtime:
         self._stale = False
         self._observations.invalidate_bridge()
         self._announce(frozenset(light.id for light in self.config.lights))
+        self._options_ready.clear()
+        self._pending_groups.clear()
         await self.adapter.resync()
 
     def diagnostics(self, light_id: str | None = None) -> dict[str, object]:
@@ -323,6 +377,7 @@ class Runtime:
             "control_notice": CONTROL_NOTICE,
             "preferences_error": redact(self.preferences_error),
             "adapter_error": redact(getattr(self.adapter, "last_error", None)),
+            "group_error": redact(self.group_error),
             "lights": {},
             "groups": {},
         }
@@ -380,6 +435,8 @@ class Runtime:
         names.update(channel.id for channel in self.config.relay_channels)
         names.update(light.id for light in self.config.lights)
         names.update(group.id for group in self.config.groups)
+        names.update(group.name for group in self.config.groups)
+        names.update(z2m_group_name(group.name) for group in self.config.groups)
         names.update(room.id for room in self.config.rooms)
         topology = getattr(self.adapter, "topology", None)
         if topology is not None:
@@ -417,11 +474,155 @@ class Runtime:
             None,
         )
 
+    def _relay_powered(self, channel_id: str) -> bool:
+        for light in self.config.lights:
+            if light.power_channel != channel_id:
+                continue
+            observed = self._observations.snapshot(light.id)
+            if (
+                observed.relay_state == SwitchState.ON
+                and observed.relay_quality == EvidenceQuality.DEVICE_REPORT
+                and observed.relay_retained is False
+            ):
+                return True
+        return False
+
+    def _powered_lights(self) -> frozenset[str]:
+        return frozenset(
+            light.id
+            for light in self.config.lights
+            if self._relay_powered(light.power_channel)
+        )
+
+    def _schedule_provision(self) -> None:
+        if self._closed or self.mode != ControlMode.OBSERVE or not self.config.groups:
+            return
+        if self._provision_task is not None and not self._provision_task.done():
+            self._provision_again = True
+            return
+        self._provision_task = asyncio.create_task(self._run_provision())
+
+    async def _run_provision(self) -> None:
+        try:
+            await self._provision_step()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - provisioning must fail closed
+            self.group_error = str(exc)
+        finally:
+            self._provision_task = None
+            if (
+                self._provision_again
+                and not self._closed
+                and self.mode == ControlMode.OBSERVE
+            ):
+                self._provision_again = False
+                self._schedule_provision()
+
+    def _plan_action(self):
+        if not getattr(self.adapter.topology, "groups_seen", False):
+            return None
+        directory: dict[str, LightEndpoint] = {}
+        for light in self.config.lights:
+            try:
+                device = self.adapter.topology.resolve_device(light.device_ieee)
+            except KeyError:
+                return None
+            directory[light.id] = LightEndpoint(
+                light.device_ieee.lower(), light.endpoint, device.name
+            )
+        catalog = tuple(
+            CatalogGroup(group_id, group.name, group.members)
+            for group_id, group in self.adapter.topology.groups()
+        )
+        present = {item.name for item in catalog}
+        for name in tuple(self._pending_groups):
+            if name in present:
+                del self._pending_groups[name]
+        return next_group_action(
+            self.config.groups,
+            directory,
+            catalog,
+            self._powered_lights(),
+            frozenset(self._options_ready),
+            self._pending_groups,
+        )
+
+    def _sync_group_ids(self) -> None:
+        updated = []
+        changed = False
+        for group in self.config.groups:
+            found = self.adapter.topology.group_named(z2m_group_name(group.name))
+            if found is None or found[0] == group.z2m_id:
+                updated.append(group)
+                continue
+            changed = True
+            updated.append(replace(group, z2m_id=found[0]))
+            if self._group_id_listener is not None:
+                self._group_id_listener(group.id, found[0])
+        if changed:
+            self.config = replace(self.config, groups=tuple(updated))
+
+    async def _provision_step(self) -> None:
+        action = self._plan_action()
+        if action is None:
+            self._sync_group_ids()
+            self.group_error = None
+            return
+        request_bridge = getattr(self.adapter, "request_bridge", None)
+        if request_bridge is None:
+            return
+        request = asyncio.create_task(request_bridge(action.path, action.payload))
+        timer = asyncio.create_task(self._clock.sleep(10))
+        try:
+            done, _pending = await asyncio.wait(
+                {request, timer}, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            if not timer.done():
+                timer.cancel()
+            if not request.done():
+                request.cancel()
+            await asyncio.gather(request, timer, return_exceptions=True)
+        if request.cancelled() or request not in done:
+            self.group_error = "bridge request timed out"
+            return
+        response = request.result()
+        if not isinstance(response, dict) or response.get("status") != "ok":
+            self.group_error = "bridge request rejected"
+            return
+        data = response.get("data")
+        advanced = False
+        if action.path == "group/add" and isinstance(data, dict):
+            friendly = data.get("friendly_name")
+            assigned = data.get("id")
+            if isinstance(friendly, str) and type(assigned) is int:
+                self._pending_groups[friendly] = assigned
+                advanced = True
+        if action.path == "group/options" and options_confirmed(response):
+            group_name = action.payload.get("id")
+            if isinstance(group_name, str):
+                self._options_ready.add(group_name)
+                advanced = True
+        if action.path in {"group/members/add", "group/members/remove"}:
+            # The republished group catalog is the source of truth for membership.
+            self.group_error = None
+            return
+        if not advanced:
+            self.group_error = "bridge request rejected"
+            return
+        self.group_error = None
+        self._provision_again = True
+
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
         self.adapter.set_active(False)
+        task = self._provision_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         if self._remove_topology:
             self._remove_topology()
         if self._groups:

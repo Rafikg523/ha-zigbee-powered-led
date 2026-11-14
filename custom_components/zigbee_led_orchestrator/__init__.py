@@ -11,6 +11,7 @@ PLATFORMS = ["light", "sensor", "binary_sensor"]
 async def async_setup_entry(hass, entry) -> bool:
     """Start one instance in observation mode and attach its platforms."""
     from .configuration import validate_config
+    from .group_provisioner import stored_group_ids
     from .mqtt_adapter import MqttAdapter
     from .preferences import PreferencesStore, load_preferences
     from .runtime import Runtime
@@ -36,6 +37,16 @@ async def async_setup_entry(hass, entry) -> bool:
         runtime.set_preferences_listener(
             lambda: store.schedule_save(runtime.preferences)
         )
+
+        def remember_group(group_id: str, z2m_id: int) -> None:
+            updated = stored_group_ids(entry.data.get("groups"), group_id, z2m_id)
+            if updated is None:
+                return
+            data = dict(entry.data)
+            data["groups"] = updated
+            hass.config_entries.async_update_entry(entry, data=data)
+
+        runtime.set_group_id_listener(remember_group)
         await runtime.start()
         entry.runtime_data = runtime
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

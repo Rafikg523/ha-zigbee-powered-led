@@ -104,7 +104,7 @@ async def test_flow_presents_catalog_choices_and_constructs_mapping(hass, discov
         "light_2",
         "relay_1",
         "relay_2",
-        "group",
+        "group_name",
     }
     result = await flow.async_step_mapping(
         {
@@ -112,7 +112,7 @@ async def test_flow_presents_catalog_choices_and_constructs_mapping(hass, discov
             "light_2": "0x0000000000000003|1",
             "relay_1": "0x0000000000000001|1|state_l1",
             "relay_2": "0x0000000000000001|2|state_l2",
-            "group": "1",
+            "group_name": "Salon",
             "min_kelvin_1": 2000,
             "max_kelvin_1": 6500,
             "min_kelvin_2": 2000,
@@ -123,3 +123,6 @@ async def test_flow_presents_catalog_choices_and_constructs_mapping(hass, discov
     )
     assert result["type"] == "create_entry"
     assert result["data"]["lights"][0]["device_ieee"] == "0x0000000000000002"
+    assert result["data"]["groups"] == [
+        {"id": "group_1", "name": "Salon", "members": ["light_1", "light_2"]}
+    ]

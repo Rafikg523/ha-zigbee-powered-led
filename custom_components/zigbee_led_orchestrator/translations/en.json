@@ -11,13 +11,13 @@
       },
       "mapping": {
         "title": "Map two circuits",
-        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. The native group is optional and must contain exactly the two selected LEDs. Setup starts in observation mode.",
+        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. Leave the group name empty to control the LEDs individually. A name such as Salon creates a Zigbee2MQTT group and a matching light entity called Salon_orchestrator. The integration maintains only that group. Setup starts in observation mode.",
         "data": {
           "light_1": "LED controller 1 and endpoint",
           "light_2": "LED controller 2 and endpoint",
           "relay_1": "LED 1 power relay channel",
           "relay_2": "LED 2 power relay channel",
-          "group": "Native group (optional; — means no group)",
+          "group_name": "Group name (optional; empty means no group)",
           "min_send_interval_ms": "Minimum send interval (ms)",
           "publication_timeout_ms": "Publication timeout (ms)",
           "boot_grace_ms": "Minimum boot grace (ms, requires calibration)",

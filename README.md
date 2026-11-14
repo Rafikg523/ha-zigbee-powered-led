@@ -1,15 +1,15 @@
 # Zigbee LED Orchestrator
 
-Integracja Home Assistant dla dwóch kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Opcjonalnie steruje oboma LED-ami przez istniejącą grupę Zigbee2MQTT.
+Integracja Home Assistant dla dwóch kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Opcjonalnie sama zakłada grupę Zigbee2MQTT o nazwie kończącej się na `_orchestrator` i steruje nią oba LED-y.
 
-**Wersja testowa 0.1.0b4:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
+**Wersja testowa 0.1.0b5:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
 
 ## Instalacja i konfiguracja
 
-1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b4` lub pobierz aktualną wersję z domyślnej gałęzi.
+1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b5` lub pobierz aktualną wersję z domyślnej gałęzi.
 2. Zainstaluj i uruchom ponownie Home Assistanta.
 3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**.
-4. Wskaż bazowy temat Z2M, dwa kontrolery i ich kanały zasilania. Grupa jest opcjonalna; jej skład musi odpowiadać dokładnie obu LED-om.
+4. Wskaż bazowy temat Z2M, dwa kontrolery i ich kanały zasilania. Nazwa grupy jest opcjonalna. Podana nazwa tworzy grupę Z2M i encję o tej samej nazwie z dopiskiem `_orchestrator`.
 5. Integracja uruchomi się w **OBSERVE**. Przygotowanie aktywnego pilotażu, rozszerzenie raportów Z2M i procedura prób opisane są w [INSTALLATION.md](INSTALLATION.md) i [TESTING.md](TESTING.md).
 
 Przed wyjazdem możesz zakończyć instalację i mapowanie. Przed aktywacją na miejscu potrzebne są poprawne mapowanie, kopia i rollback oraz wyłączenie innych ścieżek sterowania wybranymi obwodami.

@@ -12,7 +12,7 @@ def selections(**changes):
         "light_2": "0x0000000000000003|1",
         "relay_1": "0x0000000000000001|1|state_l1",
         "relay_2": "0x0000000000000001|2|state_l2",
-        "group": "",
+        "group_name": "",
         "min_send_interval_ms": 100,
         "publication_timeout_ms": 3000,
         **changes,
