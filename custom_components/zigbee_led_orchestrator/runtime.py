@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Callable
 
 from .desired_store import DesiredStateStore
 from .group_coordinator import GroupCoordinator
 from .light_capabilities import LightCapabilities
+from .metrics import Metrics
 from .models import (
     BridgeObservation,
     ControlMode,
@@ -19,8 +21,14 @@ from .models import (
     Phase,
 )
 from .observation_store import ObservationStore
+from .preferences import Preference
 from .reconciler import Circuit, GroupCircuit, Reconciler
 from .topology import validate_topology
+
+CONTROL_NOTICE = (
+    "Desired state, publication and device reports are separate facts. A published "
+    "command or an optimistic or cached report does not prove physical light output."
+)
 
 
 class MonotonicClock:
@@ -53,6 +61,10 @@ class Runtime:
         self._observations = ObservationStore(
             {light.id: light.power_channel for light in config.lights}
         )
+        self.metrics = Metrics()
+        self.preferences_error: str | None = None
+        self._preferences_listener: Callable[[], None] | None = None
+        self._paused_from = ControlMode.OBSERVE
         self._engine: Reconciler | None = None
         self._groups: GroupCoordinator | None = None
         self._stale = False
@@ -149,6 +161,7 @@ class Runtime:
             clock=self._clock,
             policy=self.config.policies,
             groups=tuple(groups),
+            metrics=self.metrics,
         )
         self._groups = GroupCoordinator(
             engine,
@@ -184,7 +197,43 @@ class Runtime:
     def submit(self, light_ids: tuple[str, ...], patch: IntentPatch, *, source: str):
         if self.mode != ControlMode.ACTIVE or self._engine is None or self._closed:
             raise RuntimeError("control unavailable")
-        return self._engine.submit(light_ids, patch, source=source)
+        result = self._engine.submit(light_ids, patch, source=source)
+        self._parameters_submitted(patch)
+        return result
+
+    def _parameters_submitted(self, patch: IntentPatch) -> None:
+        if (
+            patch.brightness is not None or patch.color_temp_kelvin is not None
+        ) and self._preferences_listener is not None:
+            self._preferences_listener()
+
+    def set_preferences_listener(self, listener: Callable[[], None] | None) -> None:
+        self._preferences_listener = listener
+
+    def preferences(self) -> dict[str, Preference]:
+        """Return current parameters only; power and commands are never included."""
+        return {
+            light.id: Preference(
+                self._desired.get(light.id).brightness,
+                self._desired.get(light.id).color_temp_kelvin,
+            )
+            for light in self.config.lights
+        }
+
+    def restore_preferences(self, preferences: dict[str, Preference]) -> None:
+        """Load saved parameters before control exists; never changes power."""
+        if self._closed or self._engine is not None or self.mode != ControlMode.OBSERVE:
+            raise RuntimeError("preferences can only be restored before control")
+        for light_id, item in preferences.items():
+            if item.brightness is None and item.color_temp_kelvin is None:
+                continue
+            self._desired.apply(
+                (light_id,),
+                IntentPatch(
+                    brightness=item.brightness, color_temp_kelvin=item.color_temp_kelvin
+                ),
+                source="restored_preferences",
+            )
 
     def submit_group(self, group_id: str, patch: IntentPatch, *, source: str):
         if (
@@ -194,7 +243,9 @@ class Runtime:
             or self._closed
         ):
             raise RuntimeError("control unavailable")
-        return self._groups.submit(group_id, patch, source=source)
+        result = self._groups.submit(group_id, patch, source=source)
+        self._parameters_submitted(patch)
+        return result
 
     def group_snapshot(self, group_id: str) -> GroupSnapshot:
         if self._groups is not None:
@@ -215,6 +266,135 @@ class Runtime:
         brightness = [c.brightness_range for c in found]
         mired = [c.mired_range for c in found]
         return LightCapabilities(_intersect(brightness), _intersect(mired))
+
+    def pause(self) -> None:
+        if self._closed:
+            raise RuntimeError("runtime closed")
+        if self.mode == ControlMode.PAUSED:
+            return
+        self._paused_from = self.mode
+        self.set_mode(ControlMode.PAUSED)
+
+    def resume(self) -> None:
+        """Restore the pre-pause mode; old intent is not replayed or promoted."""
+        if self._closed or self.mode != ControlMode.PAUSED:
+            raise RuntimeError("runtime is not paused")
+        if self._paused_from == ControlMode.ACTIVE:
+            self.set_mode(ControlMode.ACTIVE)
+        else:
+            self.set_mode(ControlMode.OBSERVE)
+
+    async def resync(self) -> None:
+        """Forget evidence and re-read the catalog; never publishes or powers on."""
+        if self._closed:
+            raise RuntimeError("runtime closed")
+        if self.mode == ControlMode.ACTIVE:
+            self.set_mode(ControlMode.OBSERVE)
+        elif self.mode == ControlMode.PAUSED:
+            self._paused_from = ControlMode.OBSERVE
+        if self._groups is not None:
+            await self._groups.close()
+            self._groups = None
+        if self._engine is not None:
+            await self._engine.close()
+            self._engine = None
+        self._stale = False
+        self._observations.invalidate_bridge()
+        self._announce(frozenset(light.id for light in self.config.lights))
+        await self.adapter.resync()
+
+    def diagnostics(self, light_id: str | None = None) -> dict[str, object]:
+        """Return a redacted export; identifiers are replaced by stable aliases."""
+        lights = list(self.config.lights)
+        if light_id is not None and all(item.id != light_id for item in lights):
+            raise KeyError(light_id)
+        redact = self._redactor()
+        data: dict[str, object] = {
+            "mode": self.mode.value,
+            "topology_stale": self._stale,
+            "bridge_online": self._observations.bridge_online,
+            "control_notice": CONTROL_NOTICE,
+            "preferences_error": redact(self.preferences_error),
+            "adapter_error": redact(getattr(self.adapter, "last_error", None)),
+            "lights": {},
+            "groups": {},
+        }
+        snapshot = self.metrics.snapshot()
+        data["counters"] = snapshot["counters"]
+        data["boot_samples"] = snapshot["boot"]
+        for index, light in enumerate(self.config.lights, start=1):
+            if light_id is not None and light.id != light_id:
+                continue
+            state = self.snapshot(light.id)
+            observed = self._observations.snapshot(light.id)
+            data["lights"][f"light_{index}"] = {
+                "phase": state.phase.value,
+                "reason": redact(state.reason),
+                "effective_state": state.effective.value,
+                "confirmed": state.confirmed,
+                "available": state.available,
+                "desired": {
+                    "on": state.desired.on,
+                    "brightness": state.desired.brightness,
+                    "color_temp_kelvin": state.desired.color_temp_kelvin,
+                    "generation": state.desired.generation,
+                    "source": redact(state.desired.source),
+                },
+                "observed": {
+                    "relay_state": observed.relay_state.value,
+                    "relay_quality": observed.relay_quality.value,
+                    "relay_retained": observed.relay_retained,
+                    "led_state": observed.led_state.value,
+                    "led_quality": observed.led_quality.value,
+                    "led_retained": observed.led_retained,
+                    "power_epoch": observed.power_epoch,
+                    "bridge_epoch": observed.bridge_epoch,
+                },
+            }
+        if light_id is None:
+            for index, group in enumerate(self.config.groups, start=1):
+                group_state = self.group_snapshot(group.id)
+                data["groups"][f"group_{index}"] = {
+                    "on": group_state.on,
+                    "confirmed_members": group_state.confirmed_members,
+                    "member_count": group_state.member_count,
+                    "confirmed": group_state.confirmed,
+                }
+        return data
+
+    def _redactor(self) -> Callable[[str | None], str | None]:
+        """Build a scrubber for installation identifiers inside free text."""
+        names: set[str] = {self.config.base_topic}
+        for item in (*self.config.relay_channels, *self.config.lights):
+            names.add(item.device_ieee)
+            names.add(item.device_ieee.lower())
+        names.update(channel.id for channel in self.config.relay_channels)
+        names.update(light.id for light in self.config.lights)
+        names.update(group.id for group in self.config.groups)
+        names.update(room.id for room in self.config.rooms)
+        topology = getattr(self.adapter, "topology", None)
+        if topology is not None:
+            for device in topology.devices():
+                names.add(device.ieee)
+                names.add(device.topic)
+                names.add(device.topic.split("/", 1)[-1])
+            for _group_id, group in topology.groups():
+                names.add(group.topic)
+                names.add(group.topic.split("/", 1)[-1])
+        ordered = sorted((n for n in names if n), key=len, reverse=True)
+        if not ordered:
+            return lambda value: value
+        pattern = re.compile(
+            "(?<![A-Za-z0-9_])("
+            + "|".join(re.escape(n) for n in ordered)
+            + ")(?![A-Za-z0-9_])",
+            re.IGNORECASE,
+        )
+
+        def redact(value: str | None) -> str | None:
+            return None if value is None else pattern.sub("[redacted]", value)
+
+        return redact
 
     def snapshot(self, light_id: str) -> LightSnapshot:
         if self._engine is not None:

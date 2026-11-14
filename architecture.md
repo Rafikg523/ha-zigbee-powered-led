@@ -10,7 +10,7 @@ Pilotaż przewiduje dwa obwody zasilane kanałami jednego przekaźnika oraz jedn
 
 ## Stan implementacji
 
-Stan opisany przy aktualizacji dokumentu: **P00–P11 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light oraz koordynator grup z barierą gotowości. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
+Stan opisany przy aktualizacji dokumentu: **P00–P12 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light, koordynator grup z barierą gotowości oraz preferencje, diagnostykę i usługi serwisowe. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
 
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
@@ -23,7 +23,10 @@ Stan opisany przy aktualizacji dokumentu: **P00–P11 zakończone w zakresie syn
 | `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Istnieje reconciler pojedynczego obwodu z obsługą zewnętrznych zmian, ograniczoną korelacją wysyłek i przerwania połączenia; adapter musi przekazywać zmiany sesji i weryfikować źródło raportów |
 | `mqtt_adapter.py`, `topology.py` | Połączenie przez MQTT HA i weryfikacja topologii Z2M | Istnieją; wymagają pełnej weryfikacji formatów Z2M w rzeczywistej instalacji |
 | `runtime.py`, `config_flow.py`, `light.py` | Cykl życia integracji, konfiguracja, encje light (pojedyncze i grupowa) | Istnieją i przetestowane syntetycznie; encja grupy wylicza stan z celów członków |
-| sensory diagnostyczne | effective/phase i confirmed | Planowane w P12 |
+| `preferences.py` | Wersjonowany zapis wyłącznie jasności i CCT (nigdy zasilania, tokenów ani kolejek); ścisła walidacja, uszkodzony zapis → puste preferencje i `preferences_error` | Istnieje (P12); moduł nie importuje HA poza `PreferencesStore` |
+| `metrics.py` | Ograniczone liczniki (komendy, akcje, timeouty, błędy, konflikty, anulowania) i p50/p95 rozruchu osobno dla typu dowodu | Istnieje (P12) |
+| `sensor.py`, `binary_sensor.py`, `entity.py`, `diagnostics.py` | Diagnostyczne encje phase / effective_state / confirmed (dostępne także bez sterowania) i zredagowany eksport diagnostyczny | Istnieją (P12) |
+| `services.py`, `services.yaml` | Usługi `pause`, `resume`, `resync`, `diagnose` adresowane przez `config_entry_id`; żadna nie publikuje do urządzeń | Istnieją (P12) |
 | `group_coordinator.py` | Bariera gotowości grupy i pojedynczy `GROUP_SET` dla w pełni gotowych członków | Istnieje (P11), testowany syntetycznie |
 | `room_coordinator.py` | Operacje pokojowe | Planowane w P15 |
 | `tests/helpers/`, `tests/unit/` | Symulator zegara/transportu i testy rdzenia | Istnieją; nie zastępują testów sprzętowych |
@@ -76,6 +79,13 @@ Schemat jest **docelowy**: nie wszystkie połączenia w kodzie już istnieją. G
 Docelowo wspólne ON/brightness/CCT jest wysyłane do grupy Zigbee2MQTT tylko, gdy skład został zweryfikowany, wszyscy faktyczni odbiorcy powinni otrzymać polecenie i spełniono barierę gotowości. Odpowiedź grupowa nie jest potwierdzeniem każdego członka. Timeout ma pozwolić na bezpieczną częściową degradację bez niezamierzonego sterowania innymi urządzeniami.
 
 W MVP plan obejmuje dwie lampy i jedną grupę z dedykowanymi kanałami. Trzy grupy, pomieszczenia, nakładające się członkostwo i lampy stale zasilane zaplanowano jako kolejne etapy. Niezależne zasoby nie powinny czekać na pełny rozruch innego obwodu. Obecny plan MVP dopuszcza jednego aktywnego arbitra w procesie HA; nie jest to jeszcze obsługa wielu niezależnych instalacji Z2M.
+
+### Preferencje, pauza i resync (P12)
+
+- Zapisywane są tylko jasność i CCT, po zmianie parametrów (opóźniony zapis). Odtworzenie następuje przed jakimkolwiek sterowaniem, w trybie OBSERVE, i nie zmienia `on`.
+- `pause` zapamiętuje poprzedni tryb i ustawia żądany stan OFF bez publikacji. `resume` przywraca ten tryb, nie odtwarza starej intencji i nie awansuje OBSERVE do ACTIVE.
+- `resync` cofa tryb do OBSERVE, zamyka silnik i koordynatora, unieważnia dowody i ponownie subskrybuje katalog MQTT; nie publikuje `/set`. ACTIVE wymaga ponownego jawnego włączenia.
+- Eksport diagnostyczny zastępuje IEEE, tematy, nazwy i identyfikatory konfiguracji aliasami.
 
 ### Bariera grupy (P11)
 

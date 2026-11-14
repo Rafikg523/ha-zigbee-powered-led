@@ -133,6 +133,26 @@ class MqttAdapter:
         elif not self._closed:
             self._schedule_resubscribe()
 
+    async def resync(self) -> None:
+        """Drop all evidence and subscriptions, then re-read retained catalogs.
+
+        Nothing is published; control stays revoked until explicitly re-enabled.
+        """
+        if self._closed:
+            raise RuntimeError("adapter closed")
+        self._session += 1
+        self._bridge_online = False
+        self._active = False
+        self.topology.update_devices([])
+        self._topology_changed()
+        self._have_devices = False
+        self._pending_groups = None
+        for unsubscribe in self._subscriptions.values():
+            unsubscribe()
+        self._subscriptions.clear()
+        if self._connected:
+            await self._resubscribe()
+
     def _schedule_resubscribe(self) -> None:
         task = self._hass.async_create_task(self._resubscribe())
         self._tasks.add(task)

@@ -437,3 +437,36 @@ async def test_topology_change_notifies_runtime_before_old_address_can_be_used(
     unsubscribe()
     await message(callbacks, "zigbee2mqtt/bridge/devices", devices("room/renamed"))
     assert len(versions) == 1
+
+
+async def test_resync_revokes_control_and_rereads_catalog_without_publishing(
+    adapter, mqtt_api, hass
+):
+    instance, _ = adapter
+    callbacks, _, _ = mqtt_api
+    await message(callbacks, "zigbee2mqtt/bridge/devices", devices())
+    await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
+    instance.set_active(True)
+    old = callbacks["zigbee2mqtt/room/led"]
+    mqtt.async_publish.reset_mock()
+
+    await instance.resync()
+
+    assert "zigbee2mqtt/room/led" not in callbacks
+    assert {
+        "zigbee2mqtt/bridge/state",
+        "zigbee2mqtt/bridge/devices",
+        "zigbee2mqtt/bridge/groups",
+    } <= set(callbacks)
+    with pytest.raises(RuntimeError):
+        await instance.publish("zigbee2mqtt/room/led/set", {"state": "ON"})
+    with pytest.raises(RuntimeError):
+        instance.set_active(True)
+    await old(
+        SimpleNamespace(
+            topic="zigbee2mqtt/room/led", payload='{"state":"ON"}', retain=False
+        )
+    )
+    mqtt.async_publish.assert_not_called()
+    await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
+    instance.set_active(True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import count
@@ -12,6 +13,7 @@ from .command_arbiter import CommandArbiter
 from .configuration import kelvin_to_mired
 from .desired_store import DesiredStateStore
 from .light_capabilities import LightCapabilities
+from .metrics import Metrics
 from .models import (
     CommandKind,
     CommandPriority,
@@ -35,6 +37,14 @@ from .observation_store import ObservationStore
 from .power_manager import is_ready
 from .protocols import Clock, Transport
 from .state_machine import Event, StateMachine
+
+_LOGGER = logging.getLogger(__name__)
+_KIND_COUNTERS = {
+    CommandKind.RELAY_ON: "relay_on",
+    CommandKind.RELAY_OFF: "relay_off",
+    CommandKind.LED_SET: "led_set",
+    CommandKind.GROUP_SET: "group_set",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +107,10 @@ class Reconciler:
         policy: PolicyConfig,
         enabled: bool = False,
         groups: tuple[GroupCircuit, ...] = (),
+        metrics: Metrics | None = None,
     ) -> None:
+        self._metrics = metrics
+        self._phase_since: dict[str, float] = {}
         self._circuits = {item.light_id: item for item in circuits}
         if len(self._circuits) != len(circuits):
             raise ValueError("duplicate light_id")
@@ -150,7 +163,20 @@ class Reconciler:
             on_publish=self._published,
         )
 
+    def _count(self, name: str) -> None:
+        if self._metrics is not None:
+            self._metrics.count(name)
+
     def _published(self, request: SendRequest, sent_at: float) -> None:
+        self._count("commands_published")
+        if request.kind in _KIND_COUNTERS:
+            self._count(_KIND_COUNTERS[request.kind])
+        _LOGGER.debug(
+            "published operation_id=%s kind=%s generations=%s evidence=publication",
+            request.operation_id,
+            request.kind,
+            [token.generation for token in request.tokens],
+        )
         if request.kind not in (CommandKind.RELAY_ON, CommandKind.RELAY_OFF):
             return
         token = request.tokens[0]
@@ -304,6 +330,7 @@ class Reconciler:
                 continue
             if previous and not previous.done():
                 previous.cancel()
+                self._count("cancellations")
             self._workers[item] = asyncio.create_task(
                 self._run(item, result[item].generation)
             )
@@ -403,6 +430,7 @@ class Reconciler:
                     and obs.power_off_at == obs.relay_received_at
                     and not own_off
                 ):
+                    self._count("conflicts")
                     self._desired.apply(
                         (item,), IntentPatch(on=False), source="external_relay"
                     )
@@ -419,6 +447,7 @@ class Reconciler:
                     and not late_on
                     and not self._desired.get(item).on
                 ):
+                    self._count("conflicts")
                     state = self._desired.apply(
                         (item,), IntentPatch(on=True), source="external_relay"
                     )[item]
@@ -511,6 +540,23 @@ class Reconciler:
         }
         self._machines[item].advance(events[phase])
         self._reasons[item] = reason
+        now = self._clock.now()
+        _LOGGER.debug(
+            "phase light=%s generation=%s phase=%s reason=%s duration_ms=%s",
+            item,
+            self._desired.get(item).generation,
+            phase,
+            reason,
+            round((now - self._phase_since.get(item, now)) * 1000),
+        )
+        self._phase_since[item] = now
+        if phase == Phase.ERROR:
+            if reason in ("control_disabled", "bridge_offline"):
+                self._count("cancellations")
+            else:
+                self._count("errors")
+                if reason is not None and "timeout" in reason:
+                    self._count("timeouts")
         self._announce({item})
 
     def snapshot(self, light_id: str) -> LightSnapshot:
@@ -854,6 +900,10 @@ class Reconciler:
             )
         if not self._current(item, generation):
             return
+        if self._metrics is not None and obs.power_started_at is not None:
+            self._metrics.record_boot(
+                obs.led_quality.value, self._clock.now() - obs.power_started_at
+            )
         self._readiness_deadlines.pop(item, None)
         self._phase(item, Phase.APPLYING)
         target = self._desired.get(item)

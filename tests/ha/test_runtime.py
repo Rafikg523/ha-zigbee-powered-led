@@ -15,6 +15,7 @@ class FakeAdapter:
         self.topology_callback = None
         self.active = False
         self.closed = False
+        self.resynced = 0
         self.sent = []
 
     def subscribe_topology(self, callback):
@@ -29,6 +30,9 @@ class FakeAdapter:
 
     async def publish(self, topic, payload, *, retain=False):
         self.sent.append((topic, payload, retain))
+
+    async def resync(self):
+        self.resynced += 1
 
     async def close(self):
         self.closed = True

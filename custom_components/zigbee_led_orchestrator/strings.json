@@ -47,5 +47,51 @@
     "error": {
       "control_unavailable": "Control cannot be enabled until the bridge and a valid topology are available."
     }
+  },
+  "services": {
+    "pause": {
+      "name": "Pause control",
+      "description": "Disable control and set every light's desired state to off without publishing.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume control",
+      "description": "Restore the mode that was active before the pause. Previous commands are not replayed.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "resync": {
+      "name": "Resync catalog",
+      "description": "Discard observations and re-read the Zigbee2MQTT catalog. Control must be enabled again afterwards.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "diagnose": {
+      "name": "Diagnose",
+      "description": "Return redacted runtime diagnostics.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        },
+        "light_id": {
+          "name": "Light",
+          "description": "Limit to one light."
+        }
+      }
+    }
   }
 }

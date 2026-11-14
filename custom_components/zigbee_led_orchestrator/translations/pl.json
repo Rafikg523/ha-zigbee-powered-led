@@ -47,5 +47,51 @@
     "error": {
       "control_unavailable": "Nie można włączyć sterowania bez dostępnego mostka i prawidłowej topologii."
     }
+  },
+  "services": {
+    "pause": {
+      "name": "Wstrzymaj sterowanie",
+      "description": "Wstrzymaj sterowanie i ustaw żądany stan świateł na wyłączony bez publikowania.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis konfiguracji",
+          "description": "Wpis Zigbee LED Orchestrator."
+        }
+      }
+    },
+    "resume": {
+      "name": "Wznów sterowanie",
+      "description": "Przywróć tryb sprzed wstrzymania. Poprzednie polecenia nie są odtwarzane.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis konfiguracji",
+          "description": "Wpis Zigbee LED Orchestrator."
+        }
+      }
+    },
+    "resync": {
+      "name": "Zsynchronizuj katalog ponownie",
+      "description": "Odrzuć obserwacje i ponownie odczytaj katalog Zigbee2MQTT. Potem trzeba ponownie włączyć sterowanie.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis konfiguracji",
+          "description": "Wpis Zigbee LED Orchestrator."
+        }
+      }
+    },
+    "diagnose": {
+      "name": "Diagnostyka",
+      "description": "Zwróć zredagowaną diagnostykę działania.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Wpis konfiguracji",
+          "description": "Wpis Zigbee LED Orchestrator."
+        },
+        "light_id": {
+          "name": "Światło",
+          "description": "Ogranicz do jednego światła."
+        }
+      }
+    }
   }
 }
