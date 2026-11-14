@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0b5 — własne grupy Zigbee2MQTT
+
+- W mapowaniu jest opcjonalna nazwa grupy. Puste pole zostawia sterowanie indywidualne. Nazwa `Salon` tworzy encję światła i grupę Zigbee2MQTT `Salon_orchestrator`.
+- Integracja sama wybiera wolny identyfikator, wyłącza `optimistic` i `retain` oraz dopina dokładnie dwa endpointy LED przy wiarygodnym raporcie ON ich przekaźników. Cudzych grup nie zmienia.
+- Komenda grupowa idzie tylko przy dokładnym składzie. Przy niepełnym składzie intencja jest zapisywana, a sterowanie idzie do członków osobno. Stan tematu grupy nie zmienia intencji.
+- Po aktualizacji uruchom ponownie Home Assistant i włącz ACTIVE. Encję discovery Zigbee2MQTT o tej samej nazwie wyłącz, żeby automatyzacje nie omijały encji integracji.
+
 ## 0.1.0b4 — potwierdzone LED OFF
 
 - Programowe wyłączenie zasilonego obwodu najpierw wysyła LED OFF i odczytuje stan, a po rzeczywistym potwierdzeniu odcina przekaźnik.
