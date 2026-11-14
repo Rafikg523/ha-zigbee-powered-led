@@ -28,7 +28,7 @@
     "step": {
       "choose": {
         "title": "Configure",
-        "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration and returns it to observation mode.",
+        "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "menu_options": {
           "add_circuit": "Add circuit",
           "create_group": "Create group",
@@ -37,14 +37,14 @@
       },
       "control": {
         "title": "Control mode",
-        "description": "Activate on site after verifying mapping, backup/rollback and disabling other writers for these circuits. Fresh reports from the Z2M extension are required. Restart always returns to observation mode.",
+        "description": "Control turns on when the Zigbee2MQTT bridge is online and the saved circuits are in the catalog. A missing circuit is reported in Home Assistant and the other circuits keep working. Turning this off keeps control off until you enable it again. An old ON is never replayed.",
         "data": {
           "active": "Enable active control"
         }
       },
       "add_circuit": {
         "title": "Add circuit",
-        "description": "Name the virtual light and select one controller with its power channel. This does not add the circuit to a group. Saving reloads the integration and returns it to observation mode.",
+        "description": "Name the virtual light and select one controller with its power channel. This does not add the circuit to a group. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "data": {
           "name": "Virtual entity name",
           "light": "LED controller and endpoint",
@@ -53,7 +53,7 @@
       },
       "create_group": {
         "title": "Create group",
-        "description": "Name the group and select which added circuits belong to it. A name such as Salon creates the Zigbee2MQTT group and light entity Salon_orchestrator. A circuit already in another group is not listed. Saving reloads the integration and returns it to observation mode.",
+        "description": "Name the group and select which added circuits belong to it. A name such as Salon creates the Zigbee2MQTT group and light entity Salon_orchestrator. A circuit already in another group is not listed. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "data": {
           "name": "Group name",
           "members": "Circuits in this group"
@@ -67,6 +67,7 @@
       "runtime_not_running": "The integration is not running. Restart Home Assistant, then try again.",
       "bridge_unavailable": "The MQTT connection or Zigbee2MQTT bridge is offline. Control stays off until the bridge is online.",
       "report_extension_unavailable": "The Zigbee2MQTT report extension is not ready. Check report_extension_ready in diagnostics and run resync after loading the extension.",
+      "devices_missing": "None of the configured circuits are in the Zigbee2MQTT catalog. Control stays off until one of them returns.",
       "invalid_mapping": "The configuration or physical mapping is invalid.",
       "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
       "invalid_group_name": "The group name is empty, too long, or contains characters Zigbee2MQTT cannot use.",

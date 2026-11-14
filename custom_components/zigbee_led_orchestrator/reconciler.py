@@ -163,6 +163,7 @@ class Reconciler:
         self._capabilities: dict[str, LightCapabilities] = {}
         self._probes: dict[tuple, tuple[int, float, asyncio.Task[SendResult]]] = {}
         self._sequence = count()
+        self._blocked: set[str] = set()
         self._arbiter = CommandArbiter(
             transport,
             clock,
@@ -351,6 +352,66 @@ class Reconciler:
                 self._phase(item, Phase.ERROR, "control_disabled")
         self._announce(self._circuits)
 
+    @property
+    def circuit_ids(self) -> frozenset[str]:
+        return frozenset(self._circuits)
+
+    def set_blocked(self, light_ids: frozenset[str]) -> None:
+        """Hide lights that left the catalog without stopping the others."""
+        previous = self._blocked
+        self._blocked = set(light_ids)
+        changed = previous.symmetric_difference(self._blocked)
+        if changed:
+            self._announce(frozenset(changed))
+
+    def isolate(self, light_id: str) -> None:
+        """Stop one circuit and forget its ON. Other circuits keep running."""
+        if light_id not in self._circuits:
+            return
+        worker = self._workers.get(light_id)
+        if worker and not worker.done():
+            worker.cancel()
+        self._readiness_deadlines.pop(light_id, None)
+        if self._desired.get(light_id).on:
+            self._desired.apply(
+                (light_id,), IntentPatch(on=False), source="device_absent"
+            )
+        self._machines[light_id].advance(Event.OFF_REQUESTED)
+        self._phase(light_id, Phase.ERROR, "device_absent")
+
+    def attach(self, circuit: Circuit) -> None:
+        """Add a circuit that was missing when the engine was built."""
+        if circuit.light_id in self._circuits:
+            return
+        if any(
+            item.relay_resource == circuit.relay_resource
+            for item in self._circuits.values()
+        ):
+            raise ValueError("duplicate relay resource")
+        self._circuits[circuit.light_id] = circuit
+        self._machines[circuit.light_id] = StateMachine()
+        self._reasons[circuit.light_id] = None
+        self._events[circuit.light_id] = asyncio.Event()
+        self._announce(frozenset({circuit.light_id}))
+
+    def replace_circuit(self, circuit: Circuit) -> None:
+        """Point one circuit at a new address and do not replay its old ON."""
+        if circuit.light_id not in self._circuits:
+            self.attach(circuit)
+            return
+        self.isolate(circuit.light_id)
+        self._circuits[circuit.light_id] = circuit
+
+    def forget_group(self, group_id: str) -> None:
+        self._groups.pop(group_id, None)
+
+    def remember_group(self, group: GroupCircuit) -> None:
+        if group.group_id in self._groups:
+            return
+        if not group.members or not set(group.members) <= set(self._circuits):
+            return
+        self._groups[group.group_id] = group
+
     def submit(
         self,
         light_ids: tuple[str, ...],
@@ -367,6 +428,8 @@ class Reconciler:
             raise RuntimeError("control unavailable")
         if any(item not in self._circuits for item in light_ids):
             raise KeyError("unknown light")
+        if self._blocked.intersection(light_ids):
+            raise RuntimeError("device absent")
         for item in light_ids:
             capability = self._capabilities.get(item)
             if capability is not None:
@@ -711,6 +774,7 @@ class Reconciler:
             confirmed,
             self._enabled
             and not self._closed
+            and light_id not in self._blocked
             and self._observations.bridge_online is not False,
             self._reasons[light_id],
         )

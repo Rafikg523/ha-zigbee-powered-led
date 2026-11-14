@@ -1,4 +1,8 @@
-"""Coordinate the HA MQTT adapter and core without implicit activation."""
+"""Coordinate the HA MQTT adapter and core.
+
+Control turns on once the bridge and device catalog are available.
+A missing device disables only that circuit.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 
+from .configuration import circuit_label
 from .const import RUNTIME_VERSION
 from .desired_store import DesiredStateStore
 from .group_coordinator import GroupCoordinator
@@ -80,7 +85,13 @@ class Runtime:
         self._engine: Reconciler | None = None
         self._groups: GroupCoordinator | None = None
         self._stale = False
-        self._signature: tuple | None = None
+        self._signatures: dict[str, tuple | None] = {}
+        self._absent: set[str] = set()
+        self._absent_groups: set[str] = set()
+        self._user_inactive = False
+        self._language = "en"
+        self.notices: dict[str, str] = {}
+        self._notice_listener: Callable[[str, str | None], None] | None = None
         self._closed = False
         self._subscribers: set[Callable[[frozenset[str]], None]] = set()
         self._remove_topology = None
@@ -99,67 +110,222 @@ class Runtime:
             await self.close()
             raise
 
+    def set_notice_listener(
+        self, listener: Callable[[str, str | None], None] | None
+    ) -> None:
+        self._notice_listener = listener
+
+    def set_language(self, language: str) -> None:
+        self._language = language
+
     def _topology_changed(self, version: int) -> None:
-        if self._engine is not None:
-            signature = self._control_signature()
-            if signature != self._signature:
-                self._stale = True
-                self._engine.topology_changed(version)
-                self.adapter.set_active(False)
-                self.mode = ControlMode.OBSERVE
-            elif self._stale:
-                # The mapped catalog matches the engine again. Stay in
-                # observation until the user explicitly enables control.
-                self._stale = False
+        del version
+        self._refresh_presence()
         self._announce(frozenset(light.id for light in self.config.lights))
         self._schedule_provision()
 
-    def _control_signature(self) -> tuple:
-        """Identify command targets. Unrelated catalog noise is ignored."""
+    def _catalog_seen(self) -> bool:
+        seen = getattr(self.adapter, "catalog_seen", None)
+        if seen is None:
+            return bool(self.adapter.topology.devices())
+        return bool(seen)
+
+    def _light_present(self, light) -> bool:
+        channel = next(
+            (
+                item
+                for item in self.config.relay_channels
+                if item.id == light.power_channel
+            ),
+            None,
+        )
+        if channel is None:
+            return False
+        narrowed = replace(
+            self.config,
+            lights=(light,),
+            relay_channels=(channel,),
+            groups=(),
+            rooms=(),
+        )
         try:
-            validate_topology(self.config, self.adapter.topology, require_groups=False)
-        except KeyError, ValueError, TypeError:
-            return ("invalid",)
+            validate_topology(narrowed, self.adapter.topology, require_groups=False)
+        except TypeError, ValueError, KeyError:
+            return False
+        return True
+
+    def _light_signature(self, light) -> tuple | None:
+        if not self._light_present(light):
+            return None
         topology = self.adapter.topology
-        relays = tuple(
-            (
-                channel.id,
-                topology.resolve_device(channel.device_ieee).topic,
-                channel.endpoint,
-                topology.resolve_device(channel.device_ieee).endpoint_name(
-                    channel.endpoint
-                ),
-                channel.state_key,
-            )
-            for channel in self.config.relay_channels
+        channel = next(
+            item
+            for item in self.config.relay_channels
+            if item.id == light.power_channel
         )
-        lights = tuple(
-            (
-                light.id,
-                topology.resolve_device(light.device_ieee).topic,
-                light.endpoint,
-                topology.resolve_device(light.device_ieee).endpoint_name(
-                    light.endpoint
-                ),
-            )
-            for light in self.config.lights
+        relay = topology.resolve_device(channel.device_ieee)
+        led = topology.resolve_device(light.device_ieee)
+        return (
+            relay.topic,
+            channel.endpoint,
+            channel.state_key,
+            led.topic,
+            light.endpoint,
         )
-        groups = []
-        for group in self.config.groups:
-            found = topology.group_named(z2m_group_name(group.name))
-            if found is None:
-                groups.append((group.id, None))
-                continue
-            native_id, native = found
-            groups.append(
-                (
-                    group.id,
-                    native_id,
-                    native.topic,
-                    tuple(sorted(native.members)),
+
+    def _group_matches(self, group, absent: set[str]) -> bool:
+        if any(member in absent for member in group.members):
+            return False
+        found = self.adapter.topology.group_named(z2m_group_name(group.name))
+        if found is None:
+            return False
+        lights = {item.id: item for item in self.config.lights}
+        expected = frozenset(
+            (lights[item].device_ieee.lower(), lights[item].endpoint)
+            for item in group.members
+        )
+        return found[1].members == expected
+
+    def _publish_notice(self, key: str, message: str | None) -> None:
+        if message is None:
+            if key not in self.notices:
+                return
+            del self.notices[key]
+        elif self.notices.get(key) == message:
+            return
+        else:
+            self.notices[key] = message
+        if self._notice_listener is not None:
+            self._notice_listener(key, message)
+
+    def _notice_text(self, kind: str, label: str) -> str:
+        polish = str(self._language).lower().startswith("pl")
+        if kind == "light":
+            if polish:
+                return (
+                    f"Obwód {label} zniknął z katalogu Zigbee2MQTT. "
+                    "Pozostałe obwody działają dalej."
                 )
+            return (
+                f"Circuit {label} is missing from the Zigbee2MQTT catalog. "
+                "The other circuits keep working."
             )
-        return (relays, lights, tuple(groups))
+        if kind == "group":
+            if polish:
+                return (
+                    f"Grupa {label} nie ma w Zigbee2MQTT oczekiwanego składu. "
+                    "Jej obecne obwody nadal działają osobno."
+                )
+            return (
+                f"Group {label} does not have the expected membership in "
+                "Zigbee2MQTT. Its circuits that are still in the catalog keep "
+                "working on their own."
+            )
+        if polish:
+            return (
+                "Żaden skonfigurowany obwód nie jest w katalogu Zigbee2MQTT. "
+                "Sterowanie jest wyłączone."
+            )
+        return (
+            "None of the configured circuits are in the Zigbee2MQTT catalog. "
+            "Control is off."
+        )
+
+    def _refresh_presence(self) -> None:
+        if not self._catalog_seen():
+            self._maybe_arm()
+            return
+        absent = {
+            light.id for light in self.config.lights if not self._light_present(light)
+        }
+        absent_groups: set[str] = set()
+        if getattr(self.adapter.topology, "groups_seen", False):
+            absent_groups = {
+                group.id
+                for group in self.config.groups
+                if not self._group_matches(group, absent)
+            }
+        self._apply_presence(absent, absent_groups)
+        self._maybe_arm()
+
+    def _apply_presence(self, absent: set[str], absent_groups: set[str]) -> None:
+        for light in self.config.lights:
+            key = f"light_{light.id}"
+            if light.id in absent:
+                self._publish_notice(
+                    key,
+                    self._notice_text(
+                        "light", circuit_label(light.id, getattr(light, "name", None))
+                    ),
+                )
+            else:
+                self._publish_notice(key, None)
+        for group in self.config.groups:
+            key = f"group_{group.id}"
+            if group.id in absent_groups:
+                self._publish_notice(key, self._notice_text("group", group.name))
+            else:
+                self._publish_notice(key, None)
+        configured = {light.id for light in self.config.lights}
+        if configured and absent == configured:
+            self._publish_notice("catalog", self._notice_text("catalog", ""))
+        else:
+            self._publish_notice("catalog", None)
+        if self._engine is not None:
+            for light in self.config.lights:
+                signature = None if light.id in absent else self._light_signature(light)
+                previous = self._signatures.get(light.id)
+                if light.id in absent:
+                    self._engine.isolate(light.id)
+                elif light.id not in self._engine.circuit_ids:
+                    circuit = self._circuit_for(light)
+                    if circuit is not None:
+                        self._engine.attach(circuit)
+                        self._apply_capabilities(light)
+                elif previous is not None and signature != previous:
+                    circuit = self._circuit_for(light)
+                    if circuit is not None:
+                        self._engine.replace_circuit(circuit)
+                        self._apply_capabilities(light)
+                self._signatures[light.id] = signature
+            self._engine.set_blocked(frozenset(absent))
+            for group in self.config.groups:
+                if group.id in absent_groups:
+                    self._engine.forget_group(group.id)
+                else:
+                    native = self._group_circuit(group)
+                    if native is not None:
+                        self._engine.remember_group(native)
+        else:
+            for light in self.config.lights:
+                self._signatures[light.id] = (
+                    None if light.id in absent else self._light_signature(light)
+                )
+        self._absent = set(absent)
+        self._absent_groups = set(absent_groups)
+
+    def _maybe_arm(self) -> None:
+        if self._closed or self._user_inactive or self.mode == ControlMode.PAUSED:
+            return
+        configured = {light.id for light in self.config.lights}
+        if self.mode == ControlMode.ACTIVE:
+            if configured and self._absent == configured:
+                self.set_mode(ControlMode.OBSERVE)
+            return
+        if not self._catalog_seen():
+            return
+        bridge = getattr(self.adapter, "bridge_online", None)
+        if self._observations.bridge_online is not True and bridge is not True:
+            return
+        reports = getattr(self.adapter, "reports", None)
+        if self.config.report_extension and reports is not None and not reports.ready:
+            return
+        if configured and self._absent == configured:
+            return
+        try:
+            self.set_mode(ControlMode.ACTIVE)
+        except RuntimeError, ValueError, TypeError:
+            return
 
     def _observation(self, observation) -> None:
         delta = self._observations.ingest(observation)
@@ -172,6 +338,8 @@ class Runtime:
             self._engine.notify(delta)
         else:
             self._announce(delta.light_ids)
+        if isinstance(observation, BridgeObservation) and observation.online:
+            self._maybe_arm()
         if isinstance(observation, RelayObservation) and self._relay_powered(
             observation.channel_id
         ):
@@ -197,46 +365,68 @@ class Runtime:
         except KeyError, ValueError, TypeError:
             return LightCapabilities(None, None)
 
+    def _circuit_for(self, light) -> Circuit | None:
+        if not self._light_present(light):
+            return None
+        channel = next(
+            item
+            for item in self.config.relay_channels
+            if item.id == light.power_channel
+        )
+        relay = self.adapter.topology.resolve_device(channel.device_ieee)
+        led = self.adapter.topology.resolve_device(light.device_ieee)
+        return Circuit(
+            light.id,
+            channel.id,
+            relay.topic + "/set",
+            led.topic + "/set",
+            f"{self.config.base_topic}:{channel.device_ieee}:{channel.endpoint}:{channel.state_key}",
+            f"{self.config.base_topic}:{light.device_ieee}:{light.endpoint}",
+            channel.state_key,
+        )
+
+    def _group_circuit(self, group) -> GroupCircuit | None:
+        if not self._group_matches(group, self._absent):
+            return None
+        found = self.adapter.topology.group_named(z2m_group_name(group.name))
+        if found is None:
+            return None
+        native_id, native = found
+        return GroupCircuit(
+            group.id,
+            native.topic + "/set",
+            f"{self.config.base_topic}:group:{native_id}",
+            group.members,
+        )
+
+    def _apply_capabilities(self, light) -> None:
+        if self._engine is None:
+            return
+        try:
+            device = self.adapter.topology.resolve_device(light.device_ieee)
+            capabilities = LightCapabilities.from_exposes(
+                device.capabilities, endpoint=device.endpoint_name(light.endpoint)
+            )
+        except KeyError, ValueError, TypeError:
+            capabilities = LightCapabilities(None, None)
+        self._engine.set_capabilities(light.id, capabilities)
+
     def _make_engine(self) -> Reconciler:
-        validate_topology(self.config, self.adapter.topology, require_groups=False)
-        channels = {channel.id: channel for channel in self.config.relay_channels}
         circuits = []
         for light in self.config.lights:
-            channel = channels[light.power_channel]
-            relay = self.adapter.topology.resolve_device(channel.device_ieee)
-            led = self.adapter.topology.resolve_device(light.device_ieee)
-            circuits.append(
-                Circuit(
-                    light.id,
-                    channel.id,
-                    relay.topic + "/set",
-                    led.topic + "/set",
-                    f"{self.config.base_topic}:{channel.device_ieee}:{channel.endpoint}:{channel.state_key}",
-                    f"{self.config.base_topic}:{light.device_ieee}:{light.endpoint}",
-                    channel.state_key,
-                )
-            )
-        lights = {light.id: light for light in self.config.lights}
+            if light.id in self._absent:
+                continue
+            circuit = self._circuit_for(light)
+            if circuit is not None:
+                circuits.append(circuit)
+        present = {item.light_id for item in circuits}
         groups = []
         for group in self.config.groups:
-            if not set(group.members) <= set(lights):
-                raise ValueError("group member is not a configured light")
-            found = self.adapter.topology.group_named(z2m_group_name(group.name))
-            expected = frozenset(
-                (lights[item].device_ieee.lower(), lights[item].endpoint)
-                for item in group.members
-            )
-            if found is None or found[1].members != expected:
+            if not set(group.members) <= present:
                 continue
-            native_id, native = found
-            groups.append(
-                GroupCircuit(
-                    group.id,
-                    native.topic + "/set",
-                    f"{self.config.base_topic}:group:{native_id}",
-                    group.members,
-                )
-            )
+            native = self._group_circuit(group)
+            if native is not None:
+                groups.append(native)
         engine = Reconciler(
             circuits=tuple(circuits),
             desired=self._desired,
@@ -255,20 +445,46 @@ class Runtime:
             members={group.id: group.members for group in self.config.groups},
         )
         for light in self.config.lights:
-            device = self.adapter.topology.resolve_device(light.device_ieee)
-            capabilities = LightCapabilities.from_exposes(
-                device.capabilities, endpoint=device.endpoint_name(light.endpoint)
-            )
-            engine.set_capabilities(light.id, capabilities)
+            if light.id in {item.light_id for item in circuits}:
+                try:
+                    device = self.adapter.topology.resolve_device(light.device_ieee)
+                    capabilities = LightCapabilities.from_exposes(
+                        device.capabilities,
+                        endpoint=device.endpoint_name(light.endpoint),
+                    )
+                except KeyError, ValueError, TypeError:
+                    capabilities = LightCapabilities(None, None)
+                engine.set_capabilities(light.id, capabilities)
         engine.subscribe(self._announce)
         return engine
 
-    def set_mode(self, mode: ControlMode) -> None:
+    def set_mode(self, mode: ControlMode, *, manual: bool = False) -> None:
         if self._closed or not isinstance(mode, ControlMode):
             raise RuntimeError("invalid or closed runtime")
+        if manual:
+            self._user_inactive = mode != ControlMode.ACTIVE
         if mode == ControlMode.ACTIVE:
-            if self._stale:
-                raise RuntimeError("topology changed; reload required")
+            bridge = getattr(self.adapter, "bridge_online", None)
+            if self._observations.bridge_online is False or bridge is False:
+                raise RuntimeError("bridge offline")
+            reports = getattr(self.adapter, "reports", None)
+            if (
+                self.config.report_extension
+                and reports is not None
+                and not reports.ready
+            ):
+                raise RuntimeError(
+                    "report extension unavailable; resync after loading it"
+                )
+            if self._catalog_seen():
+                self._absent = {
+                    light.id
+                    for light in self.config.lights
+                    if not self._light_present(light)
+                }
+            configured = {light.id for light in self.config.lights}
+            if configured and self._catalog_seen() and self._absent == configured:
+                raise RuntimeError("configured devices missing")
             created = self._engine is None
             engine = self._make_engine() if created else self._engine
             assert engine is not None
@@ -282,8 +498,8 @@ class Runtime:
                     self._groups = None
                 raise
             if created:
-                self._signature = self._control_signature()
                 self._engine = engine
+                engine.set_blocked(frozenset(self._absent))
         else:
             if self._engine is not None:
                 self._engine.set_enabled(False)
@@ -296,6 +512,8 @@ class Runtime:
     def submit(self, light_ids: tuple[str, ...], patch: IntentPatch, *, source: str):
         if self.mode != ControlMode.ACTIVE or self._engine is None or self._closed:
             raise RuntimeError("control unavailable")
+        if self._absent.intersection(light_ids):
+            raise RuntimeError("device absent")
         result = self._engine.submit(light_ids, patch, source=source)
         self._parameters_submitted(patch)
         return result
@@ -348,12 +566,16 @@ class Runtime:
             or self._closed
         ):
             raise RuntimeError("control unavailable")
+        if group_id in self._absent_groups:
+            raise RuntimeError("group unavailable")
         result = self._groups.submit(group_id, patch, source=source)
         self._parameters_submitted(patch)
         return result
 
     def group_snapshot(self, group_id: str) -> GroupSnapshot:
         members = next(g.members for g in self.config.groups if g.id == group_id)
+        if group_id in self._absent_groups:
+            return GroupSnapshot(False, 0, len(members), False, False)
         if (
             self._groups is not None
             and self._engine is not None
@@ -361,7 +583,7 @@ class Runtime:
         ):
             return self._groups.snapshot(group_id)
         if self._engine is not None:
-            snapshots = [self._engine.snapshot(item) for item in members]
+            snapshots = [self.snapshot(item) for item in members]
             confirmed = sum(1 for item in snapshots if item.confirmed)
             return GroupSnapshot(
                 any(item.desired.on for item in snapshots),
@@ -418,7 +640,7 @@ class Runtime:
             await self._engine.close()
             self._engine = None
         self._stale = False
-        self._signature = None
+        self._signatures.clear()
         self._observations.invalidate_bridge()
         self._announce(frozenset(light.id for light in self.config.lights))
         self._options_ready.clear()
@@ -530,15 +752,18 @@ class Runtime:
         return redact
 
     def snapshot(self, light_id: str) -> LightSnapshot:
-        if self._engine is not None:
-            return self._engine.snapshot(light_id)
+        if self._engine is not None and light_id in self._engine.circuit_ids:
+            state = self._engine.snapshot(light_id)
+            if light_id in self._absent:
+                return replace(state, available=False, reason="device_absent")
+            return state
         return LightSnapshot(
             self._desired.get(light_id),
-            Phase.OFF,
+            Phase.ERROR if light_id in self._absent else Phase.OFF,
             EffectiveState.UNKNOWN,
             False,
             False,
-            None,
+            "device_absent" if light_id in self._absent else None,
         )
 
     def _relay_powered(self, channel_id: str) -> bool:
@@ -562,7 +787,7 @@ class Runtime:
         )
 
     def _schedule_provision(self) -> None:
-        if self._closed or self.mode != ControlMode.OBSERVE or not self.config.groups:
+        if self._closed or self.mode == ControlMode.PAUSED or not self.config.groups:
             return
         if self._provision_task is not None and not self._provision_task.done():
             self._provision_again = True
@@ -581,7 +806,7 @@ class Runtime:
             if (
                 self._provision_again
                 and not self._closed
-                and self.mode == ControlMode.OBSERVE
+                and self.mode != ControlMode.PAUSED
             ):
                 self._provision_again = False
                 self._schedule_provision()

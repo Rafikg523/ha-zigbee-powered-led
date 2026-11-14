@@ -28,7 +28,7 @@
     "step": {
       "choose": {
         "title": "Konfiguracja",
-        "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację i wraca do trybu obserwacji.",
+        "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "menu_options": {
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
@@ -37,14 +37,14 @@
       },
       "control": {
         "title": "Tryb sterowania",
-        "description": "Aktywuj dopiero na miejscu po potwierdzeniu mapowania, kopii i rollbacku oraz wyłączeniu innych ścieżek sterowania tymi obwodami. Potrzebne są świeże raporty urządzeń z rozszerzenia Z2M. Po restarcie integracja ponownie uruchomi się w trybie obserwacji.",
+        "description": "Sterowanie włącza się, gdy mostek Zigbee2MQTT jest online i zapisane obwody są w katalogu. Brakujący obwód dostaje powiadomienie w Home Assistant, a pozostałe działają dalej. Wyłączenie tutaj zostawia sterowanie wyłączone, dopóki nie włączysz go ponownie. Stare ON nie jest odtwarzane.",
         "data": {
           "active": "Włącz aktywne sterowanie"
         }
       },
       "add_circuit": {
         "title": "Dodaj obwód",
-        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację i wraca do trybu obserwacji.",
+        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "data": {
           "name": "Nazwa wirtualnej encji",
           "light": "Kontroler LED i endpoint",
@@ -53,7 +53,7 @@
       },
       "create_group": {
         "title": "Utwórz grupę",
-        "description": "Nazwij grupę i wybierz, które dodane obwody do niej należą. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Obwód, który jest już w innej grupie, nie pojawia się na liście. Zapis przeładowuje integrację i wraca do trybu obserwacji.",
+        "description": "Nazwij grupę i wybierz, które dodane obwody do niej należą. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Obwód, który jest już w innej grupie, nie pojawia się na liście. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "data": {
           "name": "Nazwa grupy",
           "members": "Obwody w tej grupie"
@@ -67,6 +67,7 @@
       "runtime_not_running": "Integracja nie jest uruchomiona. Uruchom ponownie Home Assistant i spróbuj jeszcze raz.",
       "bridge_unavailable": "Połączenie MQTT albo mostek Zigbee2MQTT jest offline. Sterowanie pozostaje wyłączone, dopóki mostek nie będzie online.",
       "report_extension_unavailable": "Rozszerzenie raportów Zigbee2MQTT nie jest gotowe. Sprawdź report_extension_ready w diagnostyce i użyj resync po załadowaniu rozszerzenia.",
+      "devices_missing": "Żaden skonfigurowany obwód nie jest w katalogu Zigbee2MQTT. Sterowanie zostaje wyłączone, dopóki któryś nie wróci.",
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
       "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
       "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",

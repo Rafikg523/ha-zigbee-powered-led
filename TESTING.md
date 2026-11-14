@@ -17,7 +17,7 @@ To lista do odbioru pilotażu, nie raport wykonanych prób. Automatyczne testy n
 3. Wykonaj szybkie ON/OFF oraz zmiany jasności/CCT. Liczy się ostatni zamiar; nie może pojawić się seria starych komend.
 4. Jeśli podano nazwę grupy, sprawdź barierę gotowości i pojedynczy grupowy `/set`, gdy skład w Zigbee2MQTT jest dokładnie zbiorem skonfigurowanych LED-ów. Przy niepełnym składzie sterowanie idzie do członków osobno. Zapisz, których obwodów dotyczyła próba.
 5. Sprawdź brak potwierdzenia jednego LED-a: ograniczony timeout, widoczny błąd/niepotwierdzony stan i brak nieskończonych ponowień.
-6. Zaplanuj osobno restart HA, Z2M i połączenia MQTT. W instalacji współdzielonej wpływa to również na inne urządzenia: wykonuj tylko w uzgodnionym oknie. Sprawdź brak historycznego ON i wymagane ponowne ACTIVE.
+6. Zaplanuj osobno restart HA, Z2M i połączenia MQTT. W instalacji współdzielonej wpływa to również na inne urządzenia: wykonuj tylko w uzgodnionym oknie. Sprawdź brak historycznego ON. Po powrocie katalogu sterowanie ma być włączone samo. Zniknięcie jednego urządzenia ma wyłączyć tylko jego obwód i zostawić powiadomienie.
 7. Wykonaj i zapisz rollback według instrukcji instalacji.
 
 Przerwij przy zmianie niewłaściwego obwodu, spóźnionym ON po OFF, nieznanym nadawcy, błędnym składzie grupy lub utracie możliwości wyłączenia.

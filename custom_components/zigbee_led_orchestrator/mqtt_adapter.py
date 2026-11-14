@@ -90,6 +90,14 @@ class MqttAdapter:
         for callback in tuple(self._topology_subscribers):
             callback(self.topology.version)
 
+    @property
+    def catalog_seen(self) -> bool:
+        return self._have_devices
+
+    @property
+    def bridge_online(self) -> bool:
+        return self._bridge_online
+
     def set_active(self, active: bool) -> None:
         """Explicitly authorize new commands; changing mode never publishes."""
         if active and (self._closed or not self._connected or not self._bridge_online):
@@ -151,7 +159,7 @@ class MqttAdapter:
         """Drop all evidence and subscriptions, then re-read retained catalogs.
 
         No device commands are published; an opted-in report metadata handshake
-        may be sent. Control stays revoked until explicitly re-enabled.
+        may be sent. Device commands stay off until control is active again.
         """
         if self._closed:
             raise RuntimeError("adapter closed")
@@ -242,10 +250,13 @@ class MqttAdapter:
             elif message.topic == f"{self._config.base_topic}/orchestrator/report":
                 if self._config.report_extension and self._bridge_online:
                     was_broken = self.reports.broken
+                    was_ready = self.reports.ready
                     for observation in self.reports.ingest(
                         data, retained=message.retain, now=self._now()
                     ):
                         self._emit(observation)
+                    if self.reports.ready and not was_ready:
+                        self._topology_changed()
                     if self.reports.broken and not was_broken:
                         self.last_error = "report_sequence_gap; resync required"
                         self._active = False
