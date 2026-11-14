@@ -10,10 +10,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components import mqtt
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 
 from .configuration import circuit_label, validate_config
 from .const import DOMAIN
-from .group_provisioner import normalize_group_name
+from .group_provisioner import normalize_group_name, z2m_group_name
 from .light_capabilities import LightCapabilities
 from .models import ControlMode
 from .topology import Topology, validate_topology
@@ -187,28 +188,48 @@ def _policies_from_input(user_input: dict) -> dict:
     return policies
 
 
-def _groups_for_name(raw: object, light_id: str) -> list:
-    if not isinstance(raw, str) or not raw.strip():
-        return []
+def _grouped_ids(data: dict) -> set[str]:
+    grouped: set[str] = set()
+    for group in data.get("groups", []):
+        if isinstance(group, dict):
+            grouped.update(str(item) for item in group.get("members") or [])
+    return grouped
+
+
+def _free_lights(data: dict) -> list[dict]:
+    grouped = _grouped_ids(data)
+    return [
+        light
+        for light in data.get("lights", [])
+        if isinstance(light, dict) and light.get("id") not in grouped
+    ]
+
+
+def _next_group_id(data: dict) -> str:
+    used = {item.get("id") for item in data.get("groups", []) if isinstance(item, dict)}
+    index = 1
+    while f"group_{index}" in used:
+        index += 1
+    return f"group_{index}"
+
+
+def _group_name(raw: object) -> str:
     try:
-        name = normalize_group_name(raw)
+        return normalize_group_name(raw)
     except (TypeError, ValueError) as exc:
-        raise _FormError("invalid_mapping") from exc
-    return [{"id": "group_1", "name": name, "members": [light_id]}]
+        raise _FormError("invalid_group_name") from exc
 
 
-def _join_existing_group(data: dict, light_id: str) -> None:
-    """Append a new circuit to the single orchestrator group, when one exists."""
-    groups = data.get("groups")
-    if not isinstance(groups, list) or len(groups) != 1:
-        return
-    group = groups[0]
-    if not isinstance(group, dict):
-        return
-    members = list(group.get("members") or [])
-    if light_id not in members:
-        members.append(light_id)
-    group["members"] = members
+def _known_group_names(data: dict) -> set[str]:
+    names = set()
+    for group in data.get("groups", []):
+        if not isinstance(group, dict):
+            continue
+        try:
+            names.add(z2m_group_name(normalize_group_name(group.get("name", ""))))
+        except TypeError, ValueError:
+            continue
+    return names
 
 
 class _FormError(Exception):
@@ -286,68 +307,38 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_mapping"
             else:
                 try:
-                    self._catalog = await discover_topology(self.hass, base_topic)
+                    await discover_topology(self.hass, base_topic)
                 except TimeoutError, ValueError, TypeError, KeyError:
                     errors["base"] = "catalog_unavailable"
                 else:
-                    self._report_extension = user_input.get("report_extension", False)
-                    self._base_topic = base_topic
-                    return await self.async_step_mapping()
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("base_topic", default="zigbee2mqtt"): str,
-                    vol.Optional("report_extension", default=False): bool,
-                }
-            ),
-            errors=errors,
-        )
-
-    async def async_step_mapping(self, user_input=None):
-        errors = {}
-        if user_input is not None:
-            try:
-                if "configuration" in user_input or "lights" in user_input:
-                    data = dict(user_input.get("configuration", user_input))
-                    data["base_topic"] = self._base_topic
-                else:
-                    channel, configured_light = _circuit_records(
-                        _circuit_fields(self._catalog, user_input, {})
-                    )
-                    data = {
-                        "base_topic": self._base_topic,
-                        "relay_channels": [channel],
-                        "lights": [configured_light],
-                        "groups": _groups_for_name(
-                            user_input.get("group_name"), configured_light["id"]
-                        ),
-                        "rooms": [],
-                        "policies": _policies_from_input(user_input),
-                    }
-                data["report_extension"] = self._report_extension
-                config = validate_config(data)
-                validate_topology(config, self._catalog, require_groups=False)
-            except _FormError as exc:
-                errors["base"] = exc.reason
-            except TypeError, ValueError, KeyError, IndexError:
-                errors["base"] = "invalid_mapping"
-            else:
-                if self._async_current_entries():
-                    return self.async_abort(reason="single_instance")
-                return self.async_create_entry(
-                    title="Zigbee LED Orchestrator", data=data
-                )
-        light_options, relay_options = _catalog_choices(self._catalog, {})
+                    try:
+                        data = {
+                            "base_topic": base_topic,
+                            "relay_channels": [],
+                            "lights": [],
+                            "groups": [],
+                            "rooms": [],
+                            "policies": _policies_from_input(user_input),
+                            "report_extension": user_input.get(
+                                "report_extension", False
+                            ),
+                        }
+                        validate_config(data)
+                    except TypeError, ValueError, KeyError:
+                        errors["base"] = "invalid_mapping"
+                    else:
+                        if self._async_current_entries():
+                            return self.async_abort(reason="single_instance")
+                        return self.async_create_entry(
+                            title="Zigbee LED Orchestrator", data=data
+                        )
         schema = {
-            vol.Required("name"): str,
-            vol.Required("light"): vol.In(light_options),
-            vol.Required("relay"): vol.In(relay_options),
-            vol.Optional("group_name", default=""): str,
+            vol.Required("base_topic", default="zigbee2mqtt"): str,
+            vol.Optional("report_extension", default=False): bool,
         }
         _policy_schema(schema)
         return self.async_show_form(
-            step_id="mapping", data_schema=vol.Schema(schema), errors=errors
+            step_id="user", data_schema=vol.Schema(schema), errors=errors
         )
 
     @staticmethod
@@ -361,7 +352,7 @@ class OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         return self.async_show_menu(
             step_id="init",
-            menu_options=["control", "add_circuit"],
+            menu_options=["add_circuit", "create_group", "control"],
         )
 
     async def async_step_control(self, user_input=None):
@@ -402,7 +393,6 @@ class OptionsFlow(config_entries.OptionsFlow):
                 data = copy.deepcopy(current)
                 data["relay_channels"].append(channel)
                 data["lights"].append(configured_light)
-                _join_existing_group(data, configured_light["id"])
                 config = validate_config(data)
                 validate_topology(config, self._catalog, require_groups=False)
             except _FormError as exc:
@@ -427,5 +417,61 @@ class OptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="add_circuit",
             data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_create_group(self, user_input=None):
+        errors = {}
+        current = dict(self.config_entry.data)
+        free = _free_lights(current)
+        if len(free) < 2:
+            return self.async_abort(reason="need_two_circuits")
+        options = {
+            str(light["id"]): circuit_label(str(light["id"]), light.get("name"))
+            for light in free
+        }
+        if user_input is not None:
+            try:
+                name = _group_name(user_input.get("name"))
+                if z2m_group_name(name) in _known_group_names(current):
+                    raise _FormError("already_mapped")
+                chosen = user_input.get("members")
+                if not isinstance(chosen, list) or not set(chosen) <= set(options):
+                    raise _FormError("invalid_mapping")
+                order = [str(light["id"]) for light in free]
+                members = [item for item in order if item in set(chosen)]
+                if len(members) < 2:
+                    raise _FormError("need_two_members")
+                data = copy.deepcopy(current)
+                data.setdefault("groups", []).append(
+                    {
+                        "id": _next_group_id(data),
+                        "name": name,
+                        "members": members,
+                    }
+                )
+                validate_config(data)
+            except _FormError as exc:
+                errors["base"] = exc.reason
+            except TypeError, ValueError, KeyError, IndexError:
+                errors["base"] = "invalid_mapping"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=data
+                )
+                self.hass.config_entries.async_schedule_reload(
+                    self.config_entry.entry_id
+                )
+                return self.async_create_entry(
+                    title="", data=dict(self.config_entry.options)
+                )
+        return self.async_show_form(
+            step_id="create_group",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required("members"): cv.multi_select(options),
+                }
+            ),
             errors=errors,
         )

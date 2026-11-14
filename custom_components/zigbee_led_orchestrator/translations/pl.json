@@ -3,20 +3,10 @@
     "step": {
       "user": {
         "title": "Połącz z Zigbee2MQTT",
-        "description": "Odczyt istniejącego katalogu przez MQTT Home Assistanta. Rozszerzenie raportów jest opcjonalne przy konfiguracji i wymagane do prób aktywnego sterowania. Nie wysyłamy komend do urządzeń.",
+        "description": "Instalacja tylko łączy się z istniejącym katalogiem. Obwody i grupy dodasz później w Konfiguruj. Rozszerzenie raportów jest tu opcjonalne, a do prób aktywnego sterowania wymagane. Te czasy są wspólne dla wszystkich obwodów. Nie wysyłamy komend do urządzeń.",
         "data": {
           "base_topic": "Temat bazowy Zigbee2MQTT",
-          "report_extension": "Użyj rozszerzenia raportów Zigbee2MQTT (patrz instrukcja instalacji)"
-        }
-      },
-      "mapping": {
-        "title": "Przypisz jeden obwód",
-        "description": "Nazwij wirtualną encję, potem wybierz jeden kontroler LED i jego kanał zasilania. Pusta nazwa grupy oznacza sterowanie osobne. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Każdy później dodany obwód dołącza do tej grupy. Czasy są wspólne. Po instalacji integracja jest w trybie obserwacji.",
-        "data": {
-          "name": "Nazwa wirtualnej encji",
-          "light": "Kontroler LED i endpoint",
-          "relay": "Kanał zasilania",
-          "group_name": "Nazwa grupy (puste = bez grupy)",
+          "report_extension": "Użyj rozszerzenia raportów Zigbee2MQTT (patrz instrukcja instalacji)",
           "min_send_interval_ms": "Minimalny odstęp wysyłek (ms)",
           "publication_timeout_ms": "Limit czasu publikacji (ms)",
           "boot_grace_ms": "Minimalny czas rozruchu (ms, do kalibracji)",
@@ -31,17 +21,18 @@
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
     },
     "abort": {
-      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator. Kolejny obwód dodasz w Konfiguruj przy istniejącym wpisie."
+      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator. Obwody i grupy dodasz w Konfiguruj przy istniejącym wpisie."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Zigbee LED Orchestrator",
-        "description": "Zmień tryb sterowania albo dodaj kolejną parę włącznika i kontrolera. Dodanie obwodu przeładowuje integrację i wraca do trybu obserwacji. Nowy obwód dołącza do grupy, jeśli jej nazwa została podana przy pierwszej konfiguracji.",
+        "title": "Konfiguracja",
+        "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację i wraca do trybu obserwacji.",
         "menu_options": {
-          "control": "Tryb sterowania",
-          "add_circuit": "Dodaj obwód"
+          "add_circuit": "Dodaj obwód",
+          "create_group": "Utwórz grupę",
+          "control": "Tryb sterowania"
         }
       },
       "control": {
@@ -53,11 +44,19 @@
       },
       "add_circuit": {
         "title": "Dodaj obwód",
-        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Czasy pozostają bez zmian. Zapis przeładowuje integrację i wraca do trybu obserwacji. Nowy obwód dołącza do istniejącej grupy, jeśli została skonfigurowana.",
+        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację i wraca do trybu obserwacji.",
         "data": {
           "name": "Nazwa wirtualnej encji",
           "light": "Kontroler LED i endpoint",
           "relay": "Kanał zasilania"
+        }
+      },
+      "create_group": {
+        "title": "Utwórz grupę",
+        "description": "Nazwij grupę i wybierz, które dodane obwody do niej należą. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Obwód, który jest już w innej grupie, nie pojawia się na liście. Zapis przeładowuje integrację i wraca do trybu obserwacji.",
+        "data": {
+          "name": "Nazwa grupy",
+          "members": "Obwody w tej grupie"
         }
       }
     },
@@ -65,12 +64,15 @@
       "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
       "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
+      "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
+      "need_two_members": "Wybierz co najmniej dwa obwody do grupy.",
       "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
     },
     "abort": {
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
-      "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane."
+      "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane.",
+      "need_two_circuits": "Dodaj co najmniej dwa obwody, które nie są jeszcze w grupie."
     }
   },
   "services": {

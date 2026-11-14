@@ -152,6 +152,16 @@ class TestConfiguration(unittest.TestCase):
         result = self.validate(config)
         self.assertEqual(result.policies.slider_coalesce_ms, 0)
 
+    def test_empty_install_has_no_circuits_or_groups(self):
+        config = valid_config()
+        config["relay_channels"] = []
+        config["lights"] = []
+        config["groups"] = []
+        config["rooms"] = []
+        result = self.validate(config)
+        self.assertEqual(result.lights, ())
+        self.assertEqual(result.groups, ())
+
     def test_missing_name_uses_identifier_label(self):
         result = self.validate(valid_config())
         self.assertEqual(result.lights[0].name, "Light A")

@@ -19,16 +19,12 @@ def discovery(monkeypatch):
     )
 
 
-async def test_invalid_mapping_does_not_create_entry(hass, discovery):
+async def test_invalid_base_topic_does_not_create_entry(hass, discovery):
     from custom_components.zigbee_led_orchestrator.config_flow import ConfigFlow
 
     flow = ConfigFlow()
     flow.hass = hass
-    result = await flow.async_step_user({"base_topic": "zigbee2mqtt"})
-    assert result["type"] == "form"
-    data = valid_config()
-    data["lights"][0]["endpoint"] = 12
-    result = await flow.async_step_mapping(data)
+    result = await flow.async_step_user({"base_topic": "/zigbee2mqtt"})
     assert result["type"] == "form"
     assert result["errors"]["base"] == "invalid_mapping"
 
@@ -45,16 +41,25 @@ async def test_duplicate_entry_aborts(hass, discovery):
     assert result["reason"] == "single_instance"
 
 
-async def test_flow_accepts_matching_ieee_endpoints_and_group(hass, discovery):
+async def test_install_creates_an_empty_entry(hass, discovery):
     from custom_components.zigbee_led_orchestrator.config_flow import ConfigFlow
 
     flow = ConfigFlow()
     flow.hass = hass
-    await flow.async_step_user({"base_topic": "zigbee2mqtt"})
-    result = await flow.async_step_mapping({"configuration": valid_config()})
+    result = await flow.async_step_user(
+        {
+            "base_topic": "zigbee2mqtt",
+            "report_extension": True,
+            "min_send_interval_ms": 100,
+            "publication_timeout_ms": 3000,
+        }
+    )
     assert result["type"] == "create_entry"
-    assert result["data"]["lights"][0]["device_ieee"] == "0x0000000000000002"
-    assert result["data"]["groups"][0]["z2m_id"] == 1
+    assert result["title"] == "Zigbee LED Orchestrator"
+    assert result["data"]["lights"] == []
+    assert result["data"]["groups"] == []
+    assert result["data"]["relay_channels"] == []
+    assert result["data"]["report_extension"] is True
 
 
 async def test_discovery_uses_retained_metadata_and_unsubscribes(hass, monkeypatch):
@@ -98,60 +103,44 @@ async def test_flow_presents_catalog_choices_and_constructs_mapping(hass, discov
 
     flow = ConfigFlow()
     flow.hass = hass
-    form = await flow.async_step_user({"base_topic": "zigbee2mqtt"})
+    form = await flow.async_step_user()
     assert {str(key) for key in form["data_schema"].schema} >= {
-        "name",
-        "light",
-        "relay",
-        "group_name",
+        "base_topic",
+        "report_extension",
         "min_send_interval_ms",
         "publication_timeout_ms",
         "boot_grace_ms",
         "readiness_timeout_ms",
     }
-    result = await flow.async_step_mapping(
+    assert "light" not in {str(key) for key in form["data_schema"].schema}
+    assert "group_name" not in {str(key) for key in form["data_schema"].schema}
+
+
+async def test_blank_name_is_rejected(hass, discovery):
+    from custom_components.zigbee_led_orchestrator.config_flow import (
+        ConfigFlow,
+        OptionsFlow,
+    )
+
+    flow = ConfigFlow()
+    flow.hass = hass
+    created = await flow.async_step_user(
         {
-            "name": "Kuchnia",
-            "light": "0x0000000000000002|1",
-            "relay": "0x0000000000000001|1|state_l1",
-            "group_name": "Salon",
-            "min_kelvin": 2000,
-            "max_kelvin": 6500,
+            "base_topic": "zigbee2mqtt",
             "min_send_interval_ms": 100,
             "publication_timeout_ms": 3000,
         }
     )
-    assert result["type"] == "create_entry"
-    assert result["title"] == "Zigbee LED Orchestrator"
-    assert result["data"]["lights"] == [
-        {
-            "id": "light_1",
-            "name": "Kuchnia",
-            "device_ieee": "0x0000000000000002",
-            "endpoint": 1,
-            "power_channel": "relay_1",
-            "min_kelvin": 2000,
-            "max_kelvin": 6500,
-        }
-    ]
-    assert result["data"]["groups"] == [
-        {"id": "group_1", "name": "Salon", "members": ["light_1"]}
-    ]
-
-
-async def test_blank_name_is_rejected(hass, discovery):
-    from custom_components.zigbee_led_orchestrator.config_flow import ConfigFlow
-
-    flow = ConfigFlow()
-    flow.hass = hass
-    await flow.async_step_user({"base_topic": "zigbee2mqtt"})
-    result = await flow.async_step_mapping(
+    entry = MockConfigEntry(domain=DOMAIN, data=created["data"])
+    entry.add_to_hass(hass)
+    options = OptionsFlow()
+    options.hass = hass
+    options.handler = entry.entry_id
+    result = await options.async_step_add_circuit(
         {
             "name": "  ",
             "light": "0x0000000000000002|1",
             "relay": "0x0000000000000001|1|state_l1",
-            "min_send_interval_ms": 100,
-            "publication_timeout_ms": 3000,
         }
     )
     assert result["type"] == "form"
@@ -210,7 +199,7 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     flow.handler = entry.entry_id
     menu = await flow.async_step_init()
     assert menu["type"] == "menu"
-    assert menu["menu_options"] == ["control", "add_circuit"]
+    assert menu["menu_options"] == ["add_circuit", "create_group", "control"]
     form = await flow.async_step_add_circuit()
     assert {str(key) for key in form["data_schema"].schema} == {
         "name",
@@ -249,7 +238,31 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert scheduled == [entry.entry_id]
 
 
-async def test_added_circuit_joins_the_named_group(hass, discovery, monkeypatch):
+def _two_pairs():
+    data = _one_pair()
+    data["relay_channels"].append(
+        {
+            "id": "relay_2",
+            "device_ieee": "0x0000000000000001",
+            "endpoint": 2,
+            "state_key": "state_l2",
+        }
+    )
+    data["lights"].append(
+        {
+            "id": "light_2",
+            "name": "Jadalnia",
+            "device_ieee": "0x0000000000000003",
+            "endpoint": 1,
+            "power_channel": "relay_2",
+            "min_kelvin": 2000,
+            "max_kelvin": 6500,
+        }
+    )
+    return data
+
+
+async def test_added_circuit_stays_out_of_existing_groups(hass, discovery, monkeypatch):
     from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
 
     data = _one_pair()
@@ -273,13 +286,64 @@ async def test_added_circuit_joins_the_named_group(hass, discovery, monkeypatch)
     )
     assert result["type"] == "create_entry"
     assert entry.data["groups"] == [
-        {
-            "id": "group_1",
-            "name": "Salon",
-            "z2m_id": 7,
-            "members": ["light_1", "light_2"],
-        }
+        {"id": "group_1", "name": "Salon", "z2m_id": 7, "members": ["light_1"]}
     ]
+
+
+async def test_create_group_keeps_only_selected_circuits(hass, discovery, monkeypatch):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    data = _two_pairs()
+    data["relay_channels"].append(
+        {
+            "id": "relay_3",
+            "device_ieee": "0x0000000000000004",
+            "endpoint": 1,
+            "state_key": "state_l3",
+        }
+    )
+    data["lights"].append(
+        {
+            "id": "light_3",
+            "name": "Korytarz",
+            "device_ieee": "0x0000000000000005",
+            "endpoint": 1,
+            "power_channel": "relay_3",
+            "min_kelvin": 2000,
+            "max_kelvin": 6500,
+        }
+    )
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    scheduled = []
+    monkeypatch.setattr(
+        hass.config_entries,
+        "async_schedule_reload",
+        lambda entry_id: scheduled.append(entry_id),
+    )
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    blocked = await flow.async_step_create_group(
+        {"name": "Salon", "members": ["light_1"]}
+    )
+    assert blocked["type"] == "form"
+    assert blocked["errors"]["base"] == "need_two_members"
+    result = await flow.async_step_create_group(
+        {"name": "Salon", "members": ["light_2", "light_1"]}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.data["groups"] == [
+        {"id": "group_1", "name": "Salon", "members": ["light_1", "light_2"]}
+    ]
+    assert "light_3" not in entry.data["groups"][0]["members"]
+    assert scheduled == [entry.entry_id]
+    again = OptionsFlow()
+    again.hass = hass
+    again.handler = entry.entry_id
+    aborted = await again.async_step_create_group()
+    assert aborted["type"] == "abort"
+    assert aborted["reason"] == "need_two_circuits"
 
 
 async def test_options_reject_duplicate_name_and_full_catalog(hass, discovery):

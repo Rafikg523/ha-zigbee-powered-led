@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0b7 — obwody i grupy po instalacji
+
+- Instalacja łączy tylko z Zigbee2MQTT. Nie pyta o kontroler ani o grupę.
+- Obwód dodaje się później w **Konfiguruj → Dodaj obwód**. Nowy obwód nie wchodzi sam do żadnej grupy.
+- Grupę tworzy się w **Konfiguruj → Utwórz grupę**: podajesz nazwę i zaznaczasz, które już dodane obwody mają do niej należeć. Nazwa `Salon` tworzy `Salon_orchestrator`. Potrzeba co najmniej dwóch wolnych obwodów. Obwód będący już w innej grupie nie pojawia się na liście.
+- Zapis obwodu albo grupy przeładowuje wpis i wraca do OBSERVE. ACTIVE trzeba włączyć ponownie.
+- Po aktualizacji uruchom ponownie cały Home Assistant. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.0b7`.
+
 ## 0.1.0b6 — obwody po jednej parze
 
 - Pierwszy formularz zapisuje jedną parę: nazwę wirtualnej encji, kontroler LED i kanał przekaźnika. Kolejne pary dopisuje się w **Konfiguruj → Dodaj obwód**, bez drugiej instancji integracji.
