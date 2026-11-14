@@ -94,10 +94,11 @@ async def test_home_assistant_creates_lights_and_unloads(
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     entries = er.async_entries_for_config_entry(registry, entry.entry_id)
-    assert len(entries) == 2
+    assert len(entries) == 3
     assert {item.unique_id for item in entries} == {
         f"{entry.entry_id}_light_a",
         f"{entry.entry_id}_light_b",
+        f"{entry.entry_id}_group_a",
     }
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert mocked_adapter[0].closed

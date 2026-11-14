@@ -243,6 +243,32 @@ class LightSnapshot:
     reason: str | None
 
 
+class GroupAction(StrEnum):
+    GROUP_SENT = "GROUP_SENT"
+    INDIVIDUAL = "INDIVIDUAL"
+    ABORT = "ABORT"
+
+
+@dataclass(frozen=True, slots=True)
+class GroupDecision:
+    """Barrier outcome for one member; GROUP_SENT is a publication, not an ACK."""
+
+    action: GroupAction
+    sent_at: float | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GroupSnapshot:
+    """Group state derived from individual members, never from group reports."""
+
+    on: bool
+    confirmed_members: int
+    member_count: int
+    confirmed: bool
+    available: bool
+
+
 @dataclass(frozen=True, slots=True)
 class RelayChannelConfig:
     id: str

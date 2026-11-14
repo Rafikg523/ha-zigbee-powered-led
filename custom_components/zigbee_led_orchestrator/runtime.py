@@ -7,17 +7,19 @@ import time
 from collections.abc import Callable
 
 from .desired_store import DesiredStateStore
+from .group_coordinator import GroupCoordinator
 from .light_capabilities import LightCapabilities
 from .models import (
     BridgeObservation,
     ControlMode,
     EffectiveState,
+    GroupSnapshot,
     IntentPatch,
     LightSnapshot,
     Phase,
 )
 from .observation_store import ObservationStore
-from .reconciler import Circuit, Reconciler
+from .reconciler import Circuit, GroupCircuit, Reconciler
 from .topology import validate_topology
 
 
@@ -27,6 +29,14 @@ class MonotonicClock:
 
     async def sleep(self, delay: float) -> None:
         await asyncio.sleep(delay)
+
+
+def _intersect(ranges):
+    if any(item is None for item in ranges):
+        return None
+    low = max(item[0] for item in ranges)
+    high = min(item[1] for item in ranges)
+    return (low, high) if low <= high else None
 
 
 class Runtime:
@@ -44,6 +54,7 @@ class Runtime:
             {light.id: light.power_channel for light in config.lights}
         )
         self._engine: Reconciler | None = None
+        self._groups: GroupCoordinator | None = None
         self._stale = False
         self._closed = False
         self._subscribers: set[Callable[[frozenset[str]], None]] = set()
@@ -60,7 +71,7 @@ class Runtime:
     def _topology_changed(self, version: int) -> None:
         if self._engine is not None:
             self._stale = True
-            self._engine.set_enabled(False)
+            self._engine.topology_changed(version)
             self.adapter.set_active(False)
             self.mode = ControlMode.OBSERVE
         self._announce(frozenset(light.id for light in self.config.lights))
@@ -116,6 +127,20 @@ class Runtime:
                     channel.state_key,
                 )
             )
+        lights = {light.id: light for light in self.config.lights}
+        groups = []
+        for group in self.config.groups:
+            native = self.adapter.topology.resolve_group(group.z2m_id)
+            groups.append(
+                GroupCircuit(
+                    group.id,
+                    native.topic + "/set",
+                    f"{self.config.base_topic}:group:{group.z2m_id}",
+                    group.members,
+                )
+            )
+            if not set(group.members) <= set(lights):
+                raise ValueError("group member is not a configured light")
         engine = Reconciler(
             circuits=tuple(circuits),
             desired=self._desired,
@@ -123,6 +148,12 @@ class Runtime:
             transport=self.adapter,
             clock=self._clock,
             policy=self.config.policies,
+            groups=tuple(groups),
+        )
+        self._groups = GroupCoordinator(
+            engine,
+            self._clock,
+            barrier_ms=self.config.policies.group_barrier_timeout_ms,
         )
         for light in self.config.lights:
             device = self.adapter.topology.resolve_device(light.device_ieee)
@@ -155,6 +186,36 @@ class Runtime:
             raise RuntimeError("control unavailable")
         return self._engine.submit(light_ids, patch, source=source)
 
+    def submit_group(self, group_id: str, patch: IntentPatch, *, source: str):
+        if (
+            self.mode != ControlMode.ACTIVE
+            or self._engine is None
+            or self._groups is None
+            or self._closed
+        ):
+            raise RuntimeError("control unavailable")
+        return self._groups.submit(group_id, patch, source=source)
+
+    def group_snapshot(self, group_id: str) -> GroupSnapshot:
+        if self._groups is not None:
+            return self._groups.snapshot(group_id)
+        members = next(g.members for g in self.config.groups if g.id == group_id)
+        return GroupSnapshot(
+            any(self._desired.get(item).on for item in members),
+            0,
+            len(members),
+            False,
+            False,
+        )
+
+    def group_capabilities(self, group_id: str) -> LightCapabilities:
+        """Return only ranges supported by every member of the group."""
+        members = next(g.members for g in self.config.groups if g.id == group_id)
+        found = [self.light_capabilities(item) for item in members]
+        brightness = [c.brightness_range for c in found]
+        mired = [c.mired_range for c in found]
+        return LightCapabilities(_intersect(brightness), _intersect(mired))
+
     def snapshot(self, light_id: str) -> LightSnapshot:
         if self._engine is not None:
             return self._engine.snapshot(light_id)
@@ -174,6 +235,8 @@ class Runtime:
         self.adapter.set_active(False)
         if self._remove_topology:
             self._remove_topology()
+        if self._groups:
+            await self._groups.close()
         if self._engine:
             await self._engine.close()
         await self.adapter.close()

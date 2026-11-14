@@ -147,7 +147,7 @@ async def test_unknown_color_capability_is_not_advertised_or_sent():
     assert not runtime.patches
 
 
-async def test_platform_creates_one_entity_per_configured_light():
+async def test_platform_creates_entities_for_configured_lights_and_group():
     from types import SimpleNamespace
 
     from custom_components.zigbee_led_orchestrator.configuration import validate_config
@@ -159,10 +159,11 @@ async def test_platform_creates_one_entity_per_configured_light():
     entry = SimpleNamespace(entry_id="entry-123", runtime_data=runtime)
     entities = []
     await async_setup_entry(None, entry, entities.extend)
-    assert len(entities) == 2
+    assert len(entities) == 3
     assert {entity.unique_id for entity in entities} == {
         "entry-123_light_a",
         "entry-123_light_b",
+        "entry-123_group_a",
     }
 
 

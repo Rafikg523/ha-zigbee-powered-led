@@ -10,7 +10,7 @@ Pilotaż przewiduje dwa obwody zasilane kanałami jednego przekaźnika oraz jedn
 
 ## Stan implementacji
 
-Stan opisany przy aktualizacji dokumentu: **P00–P10 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle i encje light. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
+Stan opisany przy aktualizacji dokumentu: **P00–P11 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light oraz koordynator grup z barierą gotowości. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
 
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
@@ -22,9 +22,10 @@ Stan opisany przy aktualizacji dokumentu: **P00–P10 zakończone w zakresie syn
 | `power_manager.py` | Konserwatywna ocena gotowości na podstawie danych i minimalnego czasu rozruchu | Istnieje `is_ready`; potwierdzenia i timeouty obsługuje reconciler |
 | `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Istnieje reconciler pojedynczego obwodu z obsługą zewnętrznych zmian, ograniczoną korelacją wysyłek i przerwania połączenia; adapter musi przekazywać zmiany sesji i weryfikować źródło raportów |
 | `mqtt_adapter.py`, `topology.py` | Połączenie przez MQTT HA i weryfikacja topologii Z2M | Istnieją; wymagają pełnej weryfikacji formatów Z2M w rzeczywistej instalacji |
-| `runtime.py`, `config_flow.py`, `light.py` | Cykl życia integracji, konfiguracja i encje light | Istnieją i przetestowane syntetycznie; capabilities przypisane do endpointów, pełna integracja reconcilera z konwersjami jasności do P11 |
+| `runtime.py`, `config_flow.py`, `light.py` | Cykl życia integracji, konfiguracja, encje light (pojedyncze i grupowa) | Istnieją i przetestowane syntetycznie; encja grupy wylicza stan z celów członków |
 | sensory diagnostyczne | effective/phase i confirmed | Planowane w P12 |
-| `group_coordinator.py`, `room_coordinator.py` | Gotowość członków, polecenia grupowe i pokojowe | Planowane w P11 i P15 |
+| `group_coordinator.py` | Bariera gotowości grupy i pojedynczy `GROUP_SET` dla w pełni gotowych członków | Istnieje (P11), testowany syntetycznie |
+| `room_coordinator.py` | Operacje pokojowe | Planowane w P15 |
 | `tests/helpers/`, `tests/unit/` | Symulator zegara/transportu i testy rdzenia | Istnieją; nie zastępują testów sprzętowych |
 
 Nazwy przyszłych modułów są planem, nie publicznym API gotowym do użycia. Szczegółowe zakresy i zależności weryfikuj w planie i kodzie.
@@ -75,6 +76,10 @@ Schemat jest **docelowy**: nie wszystkie połączenia w kodzie już istnieją. G
 Docelowo wspólne ON/brightness/CCT jest wysyłane do grupy Zigbee2MQTT tylko, gdy skład został zweryfikowany, wszyscy faktyczni odbiorcy powinni otrzymać polecenie i spełniono barierę gotowości. Odpowiedź grupowa nie jest potwierdzeniem każdego członka. Timeout ma pozwolić na bezpieczną częściową degradację bez niezamierzonego sterowania innymi urządzeniami.
 
 W MVP plan obejmuje dwie lampy i jedną grupę z dedykowanymi kanałami. Trzy grupy, pomieszczenia, nakładające się członkostwo i lampy stale zasilane zaplanowano jako kolejne etapy. Niezależne zasoby nie powinny czekać na pełny rozruch innego obwodu. Obecny plan MVP dopuszcza jednego aktywnego arbitra w procesie HA; nie jest to jeszcze obsługa wielu niezależnych instalacji Z2M.
+
+### Bariera grupy (P11)
+
+`GroupCoordinator` tworzy rezerwację operacji tylko wtedy, gdy po zastosowaniu zamiaru wszyscy członkowie grupy mają cel ON i wszystkim zaczęto nową operację; w przeciwnym razie zamiar trafia do członków indywidualnie. Rezerwacja nie jest blokadą zasobu: członek nadal samodzielnie włącza przekaźnik i czeka na gotowość (reconciler), a decyzję o ostatnim `LED_SET` przekazuje koordynatorowi. Gdy wszyscy są gotowi, a ich docelowe payloady są identyczne po konwersji do zakresów urządzeń, wysyłany jest jeden `GROUP_SET` (zasoby: grupa i LED-y członków, tokeny wszystkich członków). Każda zmiana celu członka, OFF, błąd członka, niezgodność payloadów lub odrzucenie `STALE` przez arbitra kończy rezerwację i zwalnia pozostałych do wysyłek indywidualnych — bez przywracania celu zmienionemu członkowi. Po `group_barrier_timeout_ms` niegotowi członkowie przechodzą w `ERROR` (`group_barrier_timeout`), a gotowi są obsługiwani indywidualnie. Zmiana topologii (`Reconciler.topology_changed`) cofa uprawnienia jak wyłączenie sterowania. Publikacja `GROUP_SET` nie potwierdza członków: stan i `confirmed_members` grupy wynikają z indywidualnych potwierdzeń, a OFF grupy to wyłącznie OFF przekaźników członków. Grupy nakładające się i lampy stale zasilane pozostają poza zakresem do P16.
 
 ## Testowanie i praca nad zmianami
 

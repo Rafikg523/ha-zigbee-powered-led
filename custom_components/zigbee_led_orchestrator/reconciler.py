@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import count
+from typing import Protocol
 
 from .command_arbiter import CommandArbiter
 from .configuration import kelvin_to_mired
@@ -18,6 +19,8 @@ from .models import (
     DesiredState,
     EffectiveState,
     EvidenceQuality,
+    GroupAction,
+    GroupDecision,
     IntentPatch,
     LightSnapshot,
     ObservationDelta,
@@ -48,6 +51,26 @@ class Circuit:
 
 
 @dataclass(frozen=True, slots=True)
+class GroupCircuit:
+    """Verified native group address; members are light ids, not Z2M names."""
+
+    group_id: str
+    topic: str
+    resource: str
+    members: tuple[str, ...]
+
+
+class GroupGate(Protocol):
+    """Barrier owned by a group coordinator for one submitted operation."""
+
+    def begin(self, light_id: str, generation: int) -> None: ...
+
+    async def arrive(
+        self, light_id: str, generation: int, needs_set: bool
+    ) -> GroupDecision: ...
+
+
+@dataclass(frozen=True, slots=True)
 class InFlightCommand:
     channel_id: str
     target_state: SwitchState
@@ -73,10 +96,25 @@ class Reconciler:
         clock: Clock,
         policy: PolicyConfig,
         enabled: bool = False,
+        groups: tuple[GroupCircuit, ...] = (),
     ) -> None:
         self._circuits = {item.light_id: item for item in circuits}
         if len(self._circuits) != len(circuits):
             raise ValueError("duplicate light_id")
+        self._groups = {item.group_id: item for item in groups}
+        if (
+            len(self._groups) != len(groups)
+            or len({g.topic for g in groups}) != len(groups)
+            or len({g.resource for g in groups}) != len(groups)
+        ):
+            raise ValueError("duplicate group")
+        for group in groups:
+            if (
+                not group.members
+                or len(set(group.members)) != len(group.members)
+                or not set(group.members) <= set(self._circuits)
+            ):
+                raise ValueError("invalid group members")
         if len({c.relay_resource for c in circuits}) != len(circuits):
             raise ValueError("duplicate relay resource")
         self._desired = desired
@@ -98,6 +136,7 @@ class Reconciler:
         self._readiness_deadlines: dict[str, tuple[int, int, float]] = {}
         self._in_flight: dict[str, InFlightCommand] = {}
         self._interrupted_on: dict[str, InFlightCommand] = {}
+        self._gates: dict[str, tuple[GroupGate, int]] = {}
         self._last_relay: dict[str, SwitchState] = {}
         self._capabilities: dict[str, LightCapabilities] = {}
         self._sequence = count()
@@ -153,13 +192,28 @@ class Reconciler:
                 return False
             if request.kind != CommandKind.RELAY_OFF and not desired.on:
                 return False
-            if request.kind == CommandKind.LED_SET and not is_ready(
+            if request.kind in (
+                CommandKind.LED_SET,
+                CommandKind.GROUP_SET,
+            ) and not is_ready(
                 observed,
                 now=self._clock.now(),
                 boot_grace_seconds=self._policy.boot_grace_ms / 1000,
             ):
                 return False
+        if request.kind == CommandKind.GROUP_SET:
+            group = next(
+                (g for g in self._groups.values() if g.topic == request.topic), None
+            )
+            if group is None or {t.light_id for t in request.tokens} != set(
+                group.members
+            ):
+                return False
         return True
+
+    @property
+    def groups(self) -> dict[str, GroupCircuit]:
+        return dict(self._groups)
 
     def set_capabilities(self, light_id: str, capabilities: LightCapabilities) -> None:
         """Set verified device ranges before starting a new operation."""
@@ -208,7 +262,12 @@ class Reconciler:
         self._announce(self._circuits)
 
     def submit(
-        self, light_ids: tuple[str, ...], patch: IntentPatch, *, source: str
+        self,
+        light_ids: tuple[str, ...],
+        patch: IntentPatch,
+        *,
+        source: str,
+        gate: GroupGate | None = None,
     ) -> dict[str, DesiredState]:
         if (
             self._closed
@@ -248,8 +307,38 @@ class Reconciler:
             self._workers[item] = asyncio.create_task(
                 self._run(item, result[item].generation)
             )
+            if gate is not None and result[item].on:
+                self._gates[item] = (gate, result[item].generation)
+                gate.begin(item, result[item].generation)
         self._announce(changed)
         return result
+
+    def release_gate(self, gate: GroupGate) -> None:
+        for item, (owner, _generation) in tuple(self._gates.items()):
+            if owner is gate:
+                del self._gates[item]
+
+    def abort_member(self, light_id: str, generation: int, reason: str) -> None:
+        """Fail one still-requested member without touching its relay or intent."""
+        if (
+            self._closed
+            or light_id not in self._circuits
+            or self._desired.get(light_id).generation != generation
+        ):
+            return
+        worker = self._workers.get(light_id)
+        if worker and not worker.done():
+            worker.cancel()
+        self._readiness_deadlines.pop(light_id, None)
+        self._phase(light_id, Phase.ERROR, reason)
+
+    def topology_changed(self, version: int) -> None:
+        """Revoke all authority; a new topology must be validated and re-enabled."""
+        self._topology_version = version
+        if self._enabled:
+            self.set_enabled(False)
+        else:
+            self._control_epoch += 1
 
     def notify(self, delta: ObservationDelta) -> None:
         if delta.bridge_changed and self._observations.bridge_online is False:
@@ -769,26 +858,40 @@ class Reconciler:
         self._phase(item, Phase.APPLYING)
         target = self._desired.get(item)
         obs = self._observations.snapshot(item)
+        registration = self._gates.get(item)
+        if registration is not None and registration[1] == generation:
+            decision = await registration[0].arrive(
+                item,
+                generation,
+                not (
+                    obs.led_state == SwitchState.ON
+                    and self._matches_parameters(item, target, obs)
+                ),
+            )
+            if not self._current(item, generation):
+                return
+            if decision.action == GroupAction.ABORT:
+                self._phase(item, Phase.ERROR, decision.reason or "group_set_failed")
+                return
+            if decision.action == GroupAction.GROUP_SENT:
+                self._phase(item, Phase.UNCONFIRMED)
+                await self._confirm_led(
+                    item,
+                    generation,
+                    target,
+                    decision.sent_at,
+                    ready_epoch,
+                    bridge_epoch,
+                )
+                return
+            target = self._desired.get(item)
+            obs = self._observations.snapshot(item)
         if obs.led_state == SwitchState.ON and self._matches_parameters(
             item, target, obs
         ):
             self._phase(item, Phase.ON)
             return
-        payload: dict[str, object] = {"state": "ON", "transition": 0}
-        if target.brightness is not None:
-            capability = self._capabilities.get(item)
-            payload["brightness"] = (
-                capability.device_brightness(target.brightness)
-                if capability
-                else target.brightness
-            )
-        if target.color_temp_kelvin is not None:
-            capability = self._capabilities.get(item)
-            payload["color_temp"] = (
-                capability.device_mired(target.color_temp_kelvin)
-                if capability
-                else kelvin_to_mired(target.color_temp_kelvin)
-            )
+        payload = self.led_payload(item)
         result = await asyncio.shield(self._send(item, CommandKind.LED_SET, payload))
         send_completed = self._clock.now()
         if not self._current(item, generation):
@@ -797,6 +900,19 @@ class Reconciler:
             self._phase(item, Phase.ERROR, result.reason or "led_set_failed")
             return
         self._phase(item, Phase.UNCONFIRMED)
+        await self._confirm_led(
+            item, generation, target, send_completed, ready_epoch, bridge_epoch
+        )
+
+    async def _confirm_led(
+        self,
+        item: str,
+        generation: int,
+        target: DesiredState,
+        send_completed: float,
+        ready_epoch: int,
+        bridge_epoch: int,
+    ) -> None:
         confirmed = await self._wait(
             item,
             generation,
@@ -815,6 +931,48 @@ class Reconciler:
         )
         if confirmed and self._current(item, generation):
             self._phase(item, Phase.ON)
+
+    def led_payload(self, light_id: str) -> dict[str, object]:
+        """Device-range command payload for the member's current desired state."""
+        target = self._desired.get(light_id)
+        capability = self._capabilities.get(light_id)
+        payload: dict[str, object] = {"state": "ON", "transition": 0}
+        if target.brightness is not None:
+            payload["brightness"] = (
+                capability.device_brightness(target.brightness)
+                if capability
+                else target.brightness
+            )
+        if target.color_temp_kelvin is not None:
+            payload["color_temp"] = (
+                capability.device_mired(target.color_temp_kelvin)
+                if capability
+                else kelvin_to_mired(target.color_temp_kelvin)
+            )
+        return payload
+
+    def send_group(
+        self, group_id: str, payload: dict[str, object], operation_id: str
+    ) -> asyncio.Task[SendResult]:
+        """Publish one native group command covering every configured member."""
+        group = self._groups[group_id]
+        request = SendRequest(
+            topic=group.topic,
+            payload=payload,
+            tokens=tuple(self._token(item) for item in group.members),
+            resources=(
+                group.resource,
+                *(self._circuits[item].led_resource for item in group.members),
+            ),
+            priority=CommandPriority.NORMAL,
+            operation_id=f"{operation_id}-{next(self._sequence)}",
+            kind=CommandKind.GROUP_SET,
+            topology_version=self._topology_version,
+        )
+        task = asyncio.create_task(self._arbiter.send(request))
+        self._sends.add(task)
+        task.add_done_callback(self._sends.discard)
+        return task
 
     async def close(self) -> None:
         if self._closed:
