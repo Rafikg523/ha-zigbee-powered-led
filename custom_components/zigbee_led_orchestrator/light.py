@@ -23,7 +23,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     runtime = entry.runtime_data
     async_add_entities(
         OrchestratorLight(
-            runtime, entry.entry_id, light.id, light.min_kelvin, light.max_kelvin
+            runtime,
+            entry.entry_id,
+            light.id,
+            light.min_kelvin,
+            light.max_kelvin,
+            name=light.name,
         )
         for light in runtime.config.lights
     )
@@ -56,6 +61,7 @@ class OrchestratorLight(LightEntity):
         *,
         supports_color_temp: bool = False,
         supports_brightness: bool = False,
+        name: str | None = None,
     ) -> None:
         self._runtime = runtime
         self._supports_color_temp = supports_color_temp
@@ -68,7 +74,7 @@ class OrchestratorLight(LightEntity):
         self._attr_color_mode = mode
         self._attr_supported_color_modes = {mode}
         self._light_id = light_id
-        self._attr_name = light_id.replace("_", " ").title()
+        self._attr_name = name or light_id.replace("_", " ").title()
         self._attr_unique_id = f"{entry_id}_{light_id}"
         self._config_min_kelvin = min_kelvin
         self._config_max_kelvin = max_kelvin

@@ -286,6 +286,7 @@ class LightConfig:
     power_channel: str
     min_kelvin: int
     max_kelvin: int
+    name: str
 
 
 @dataclass(frozen=True, slots=True)

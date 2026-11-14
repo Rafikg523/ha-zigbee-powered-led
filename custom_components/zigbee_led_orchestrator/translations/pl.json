@@ -10,14 +10,12 @@
         }
       },
       "mapping": {
-        "title": "Przypisz dwa obwody",
-        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Grupa jest opcjonalna: wybierz ją tylko, gdy zawiera dokładnie oba wybrane LED-y. Po instalacji integracja uruchamia się w trybie obserwacji.",
+        "title": "Przypisz obwód",
+        "description": "Nazwij wirtualne światło, potem wybierz jeden kontroler LED i jego kanał zasilania. Zakres temperatury jest odczytywany z katalogu. Te czasy będą wspólne dla kolejnych obwodów. Po instalacji integracja uruchamia się w trybie obserwacji.",
         "data": {
-          "light_1": "Kontroler LED 1 i endpoint",
-          "light_2": "Kontroler LED 2 i endpoint",
-          "relay_1": "Kanał zasilania LED 1",
-          "relay_2": "Kanał zasilania LED 2",
-          "group": "Grupa natywna (opcjonalnie, — oznacza bez grupy)",
+          "name": "Nazwa wirtualnej encji",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał zasilania",
           "min_send_interval_ms": "Minimalny odstęp wysyłek (ms)",
           "publication_timeout_ms": "Limit czasu publikacji (ms)",
           "boot_grace_ms": "Minimalny czas rozruchu (ms, do kalibracji)",
@@ -27,24 +25,51 @@
     },
     "error": {
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
+      "invalid_name": "Nazwa wirtualnej encji musi być niepusta i bez spacji na brzegach.",
+      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
     },
     "abort": {
-      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator."
+      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator. Kolejny obwód dodasz w Konfiguruj przy istniejącym wpisie."
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Zigbee LED Orchestrator",
+        "description": "Włącz sterowanie albo dodaj kolejną parę włącznika i kontrolera. Dodanie obwodu przeładowuje integrację i wraca do trybu obserwacji.",
+        "menu_options": {
+          "control": "Tryb sterowania",
+          "add_circuit": "Dodaj obwód"
+        }
+      },
+      "control": {
         "title": "Tryb sterowania",
         "description": "Aktywuj dopiero na miejscu po potwierdzeniu mapowania, kopii i rollbacku oraz wyłączeniu innych ścieżek sterowania tymi obwodami. Potrzebne są świeże raporty urządzeń z rozszerzenia Z2M. Po restarcie integracja ponownie uruchomi się w trybie obserwacji.",
         "data": {
           "active": "Włącz aktywne sterowanie"
         }
+      },
+      "add_circuit": {
+        "title": "Dodaj obwód",
+        "description": "Podaj nazwę wirtualnego światła oraz jeden kontroler i jego kanał zasilania. Czasy pozostają takie jak przy pierwszej parze. Zapis przeładowuje integrację i wraca do trybu obserwacji.",
+        "data": {
+          "name": "Nazwa wirtualnej encji",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał zasilania"
+        }
       }
     },
     "error": {
-      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync."
+      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
+      "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
+      "invalid_name": "Nazwa wirtualnej encji musi być niepusta i bez spacji na brzegach.",
+      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
+    },
+    "abort": {
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "no_free_circuit": "Wszystkie wykryte kontrolery albo kanały przekaźnika są już przypisane."
     }
   },
   "services": {

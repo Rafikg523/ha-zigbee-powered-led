@@ -10,18 +10,20 @@ Wymagane: Home Assistant 2026.11.0 lub zgodny z przetestowanym API, skonfigurowa
 
 Dodaj **Zigbee LED Orchestrator** w Ustawienia → Urządzenia i usługi. Jeśli nie ma go na liście, odśwież przeglądarkę i sprawdź log HA po restarcie.
 
-## 2. Zmapuj obwody
+## 2. Zmapuj obwód
 
 Wpisz rzeczywisty base topic Z2M. Integracja pasywnie czeka do 10 sekund na katalog. Brak katalogu oznacza konieczność sprawdzenia integracji MQTT, base topic i publikowania retained metadanych przez Z2M.
 
-- Wybierz kontroler LED 1 i jego kanał przekaźnika, potem LED 2 i jego kanał. Wybory wskazują nazwy oraz IEEE i endpointy. Numer kanału nie dowodzi jego fizycznego okablowania — sprawdź je na miejscu.
+- Podaj nazwę wirtualnej encji światła.
+- Wybierz jeden kontroler LED i jego kanał przekaźnika. Wybory wskazują nazwy oraz IEEE i endpointy. Numer kanału nie dowodzi jego fizycznego okablowania — sprawdź je na miejscu.
 - Zakres temperatury pochodzi z exposes kontrolera, bez ręcznego przeliczania miredów.
-- Grupę zostaw jako `—`, jeśli nie masz grupy zawierającej dokładnie dwa wybrane endpointy LED. Grupa z endpointami przekaźnika lub dodatkowymi odbiorcami nie nadaje się do tego pilotażu. Nie modyfikuj istniejącej grupy używanej przez inne sterowanie bez zaplanowanego powrotu; możesz przygotować osobną grupę wyłącznie tych LED-ów.
-- Czasy formularza są parametrami początkowymi do prób, nie wynikami pomiarów. Dostosuj boot grace i timeout gotowości do pomiarów. Sam boot grace nie odblokowuje wysyłki bez raportu.
+- Czasy formularza są parametrami początkowymi do prób, nie wynikami pomiarów. Dostosuj boot grace i timeout gotowości do pomiarów. Sam boot grace nie odblokowuje wysyłki bez raportu. Te same czasy obowiązują kolejne pary.
+- Kolejną parę dodasz w **Konfiguruj** przy wpisie, krokiem **Dodaj obwód**. Formularz pyta tylko o nazwę, kontroler i kanał. Zapis przeładowuje integrację i wraca do trybu obserwacji; ACTIVE trzeba włączyć ponownie.
+- Nowe pary nie są dopisywane do grupy. Wpis utworzony wcześniej z grupą nadal ją obsługuje.
 
-Dla przygotowania samej konfiguracji można zostawić rozszerzenie raportów wyłączone. Do prób aktywnych w pierwszym kroku zaznacz **Użyj rozszerzenia raportów Zigbee2MQTT**. Wyboru dokonuje się przy dodawaniu integracji; aby zmienić mapowanie lub ten wybór, zanotuj konfigurację, usuń wpis i dodaj go ponownie. Usunięcie wpisu usuwa jego encje i nie wysyła do urządzeń polecenia OFF.
+Dla przygotowania samej konfiguracji można zostawić rozszerzenie raportów wyłączone. Do prób aktywnych w pierwszym kroku zaznacz **Użyj rozszerzenia raportów Zigbee2MQTT**. Wyboru dokonuje się przy dodawaniu integracji; aby zmienić już zapisaną parę lub ten wybór, zanotuj konfigurację, usuń wpis i dodaj go ponownie. Usunięcie wpisu usuwa jego encje i nie wysyła do urządzeń polecenia OFF.
 
-Po dodaniu wpisu powstaną dwie encje light i opcjonalna grupa oraz diagnostyka phase/effective_state/confirmed. W OBSERVE encje sterujące są niedostępne — jest to oczekiwane. Diagnostyka pozostaje dostępna.
+Po dodaniu pary powstaje jedna encja light oraz diagnostyka phase/effective_state/confirmed. W OBSERVE encje sterujące są niedostępne — jest to oczekiwane. Diagnostyka pozostaje dostępna.
 
 ## 3. Przygotuj źródło rzeczywistych raportów
 

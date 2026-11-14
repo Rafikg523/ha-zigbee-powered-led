@@ -139,6 +139,9 @@ class Rig:
     async def enable_active(self) -> dict:
         result = await self.hass.config_entries.options.async_init(self.entry.entry_id)
         result = await self.hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "control"}
+        )
+        result = await self.hass.config_entries.options.async_configure(
             result["flow_id"], {"active": True}
         )
         await self.settle()

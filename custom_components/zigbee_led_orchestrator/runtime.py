@@ -379,6 +379,7 @@ class Runtime:
             names.add(item.device_ieee.lower())
         names.update(channel.id for channel in self.config.relay_channels)
         names.update(light.id for light in self.config.lights)
+        names.update(light.name for light in self.config.lights)
         names.update(group.id for group in self.config.groups)
         names.update(room.id for room in self.config.rooms)
         topology = getattr(self.adapter, "topology", None)
