@@ -11,7 +11,7 @@
       },
       "mapping": {
         "title": "Przypisz dwa obwody",
-        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Pusta nazwa oznacza sterowanie pojedyncze. Podana nazwa tworzy grupę Zigbee2MQTT i encję światła o nazwie <nazwa>_orchestrator. Integracja utrzymuje tylko tę grupę. Po instalacji uruchamia się w trybie obserwacji.",
+        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Pusta nazwa oznacza sterowanie pojedyncze. Podana nazwa, na przykład Salon, tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Integracja utrzymuje tylko tę grupę. Po instalacji uruchamia się w trybie obserwacji.",
         "data": {
           "light_1": "Kontroler LED 1 i endpoint",
           "light_2": "Kontroler LED 2 i endpoint",

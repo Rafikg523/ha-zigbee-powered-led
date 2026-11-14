@@ -11,7 +11,7 @@
       },
       "mapping": {
         "title": "Map two circuits",
-        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. Leave the group name empty to control the LEDs individually. A name creates a Zigbee2MQTT group and a matching light entity called <name>_orchestrator. The integration maintains only that group. Setup starts in observation mode.",
+        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. Leave the group name empty to control the LEDs individually. A name such as Salon creates a Zigbee2MQTT group and a matching light entity called Salon_orchestrator. The integration maintains only that group. Setup starts in observation mode.",
         "data": {
           "light_1": "LED controller 1 and endpoint",
           "light_2": "LED controller 2 and endpoint",
