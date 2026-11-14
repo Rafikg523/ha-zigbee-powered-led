@@ -130,6 +130,47 @@ async def test_missing_relay_confirmation_blocks_led_set(rig):
     assert engine.snapshot("led").phase == Phase.ERROR
 
 
+@pytest.mark.parametrize("external_off", [False, True])
+async def test_confirmed_on_does_not_block_next_power_cycle(rig, external_off):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock)
+    await clock.advance(2.7)
+    if not external_off:
+        engine.submit(("led",), IntentPatch(on=False), source="ui")
+        await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.5)
+    assert engine.snapshot("led").desired.on is False
+
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    assert sum(x.payload == {"state_l1": "ON"} for x in transport.sent) == 2
+    assert engine.snapshot("led").phase == Phase.POWERING
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    assert engine.snapshot("led").phase == Phase.WAITING_READY
+
+
+async def test_explicit_on_after_timeout_and_confirmed_off_starts_new_command(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(3.1)
+    assert engine.snapshot("led").reason == "relay_confirmation_timeout"
+    engine.submit(("led",), IntentPatch(on=False), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.5)
+    assert engine.snapshot("led").phase == Phase.OFF
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.01)
+    assert sum(x.payload == {"state_l1": "ON"} for x in transport.sent) == 2
+    assert engine.snapshot("led").phase == Phase.POWERING
+
+
 async def test_t16_slow_boot_does_not_repeat_set(rig):
     clock, transport, observations, engine = rig
     engine.submit(("led",), IntentPatch(on=True, brightness=160), source="ui")

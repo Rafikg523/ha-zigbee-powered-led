@@ -781,6 +781,9 @@ class Reconciler:
             return
         if confirmed:
             self._off_pending.pop(item, None)
+            # A confirmed explicit OFF also resolves an earlier ON timeout.
+            # Only a new user intent may start the next ON command.
+            self._relay_pending.pop(item, None)
             self._phase(item, Phase.OFF)
         else:
             self._phase(item, Phase.ERROR, "relay_confirmation_timeout")
@@ -891,6 +894,9 @@ class Reconciler:
             if not confirmed:
                 self._phase(item, Phase.ERROR, "relay_confirmation_timeout")
                 return
+        # Confirmed power ends this ON command's lifetime. Keeping its task
+        # would make a later power cycle wait on the old, expired deadline.
+        self._relay_pending.pop(item, None)
         self._phase(item, Phase.WAITING_READY)
         ready_epoch = self._observations.snapshot(item).power_epoch
         bridge_epoch = self._observations.snapshot(item).bridge_epoch

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0b2 — poprawka ponownego włączania
+
+- Usunięto blokadę kolejnego ON po wcześniejszym potwierdzonym ON i wyłączeniu z HA lub fizycznego przycisku. Zakończona komenda nie jest już traktowana jako oczekująca.
+- Potwierdzone jawne OFF pozwala rozpocząć nową operację ON po wcześniejszym timeout. Nie dodano automatycznego ponawiania ON.
+- Dodano trzy testy regresji cyklu zasilania i odzyskania po timeout.
+- Nie zmieniono konfiguracji ani rozszerzenia Z2M; aktualizacja nie wymaga ponownego dodawania integracji. Po aktualizacji uruchom ponownie HA i ponownie włącz ACTIVE przed próbą.
+- Poprawkę zweryfikowano automatycznie; jej działanie na instalacji wymaga ponownego testu po aktualizacji.
+
 ## 0.1.0b1 — wersja testowa
 
 - Pełna implementacja dwóch obwodów, opcjonalnej grupy, diagnostyki i preferencji dostępna do instalacji.
