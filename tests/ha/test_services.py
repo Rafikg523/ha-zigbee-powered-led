@@ -77,6 +77,7 @@ async def test_pause_resume_never_replays(setup):
 
 async def test_resume_never_promotes_observe_to_active(setup):
     hass, entry, runtime, adapter = setup
+    runtime.set_mode(ControlMode.OBSERVE, manual=True)
     await call(hass, entry, "pause")
     assert runtime.mode == ControlMode.PAUSED
     await call(hass, entry, "resume")
@@ -118,7 +119,7 @@ async def test_resync_while_paused_stays_paused(setup):
 async def test_diagnose_returns_redacted_data(setup):
     hass, entry, _runtime, adapter = setup
     result = await call(hass, entry, "diagnose")
-    assert result["mode"] == "OBSERVE"
+    assert result["mode"] == "ACTIVE"
     assert "0x0000000000000001" not in str(result)
     single = await call(hass, entry, "diagnose", light_id="light_a")
     assert len(single["lights"]) == 1

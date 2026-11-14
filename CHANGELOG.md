@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.1.3 — włączenie sterowania po odświeżeniu katalogu
+## 0.1.3 — sterowanie wraca samo, brak jednego urządzenia nie gasi reszty
 
-- Ponowne wysłanie katalogu urządzeń przez Zigbee2MQTT (anons, interview, zmiana adresu sieciowego) traktowało niezmienione obwody jak nową topologię. Jeśli silnik już istniał, kolejna próba ACTIVE kończyła się ogólnym komunikatem i sterowanie zostawało wyłączone.
-- Identyczny katalog nie odbiera uprawnień i nie odtwarza starego ON. Rzeczywista zmiana składu albo brak urządzenia nadal wymaga resync i nie włącza ACTIVE.
-- Nieudane włączenie, na przykład przy offline mostka albo niegotowym rozszerzeniu raportów, nie zostawia silnika. Następne odświeżenie katalogu nie blokuje sterowania na stałe.
-- Formularz trybu podaje konkretną przyczynę: zmieniona topologia, niezgodne mapowanie, integracja nieuruchomiona, mostek offline albo niegotowe rozszerzenie raportów.
-- To zwykłe wydanie, bez przyrostka. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.3`. Potem włącz ACTIVE jeszcze raz.
+- Po restarcie Home Assistant, resync, dodaniu obwodu albo utworzeniu grupy sterowanie włącza się samo, gdy mostek Zigbee2MQTT jest online i katalog urządzeń jest znany. Stare ON nie jest odtwarzane.
+- Identyczne ponowne wysłanie katalogu nie wyłącza sterowania i nie powtarza komend.
+- Zniknięcie jednego urządzenia wyłącza tylko jego obwód i zostawia powiadomienie w Home Assistant. Pozostałe obwody dalej przyjmują komendy.
+- Grupa bez oczekiwanego składu w Zigbee2MQTT staje się niedostępna. Jej obwody, które nadal są w katalogu, działają osobno. Cudze grupy nie są ruszane.
+- Gdy z katalogu znikną wszystkie skonfigurowane obwody, sterowanie zostaje wyłączone i wraca samo, gdy któryś obwód się pojawi.
+- Jawne wyłączenie trybu sterowania zostaje wyłączone do następnego ręcznego włączenia. Offline mostka wstrzymuje wszystko i wznawia bez odtwarzania ON, gdy mostek i katalog wrócą.
+- To zwykłe wydanie, bez przyrostka. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.3`. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
 
 ## 0.1.2 — podpisy w menu konfiguracji
 

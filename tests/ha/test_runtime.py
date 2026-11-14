@@ -58,7 +58,7 @@ async def test_first_setup_is_observe_only(runtime):
     assert not adapter.sent
 
 
-async def test_topology_change_revokes_active_authority(runtime):
+async def test_group_membership_change_keeps_the_other_circuits(runtime):
     instance, adapter = runtime
     instance.set_mode(ControlMode.ACTIVE)
     assert adapter.active
@@ -73,13 +73,13 @@ async def test_topology_change_revokes_active_authority(runtime):
         ]
     )
     adapter.topology_callback(adapter.topology.version)
-    assert not adapter.active
-    assert instance.mode == ControlMode.OBSERVE
-    assert not instance.snapshot("light_a").desired.on
-    with pytest.raises(RuntimeError, match="topology changed"):
-        instance.set_mode(ControlMode.ACTIVE)
+    assert adapter.active
+    assert instance.mode == ControlMode.ACTIVE
+    assert instance.snapshot("light_a").desired.on
+    assert not instance.group_snapshot("group_a").available
     with pytest.raises(RuntimeError):
-        instance.submit(("light_a",), IntentPatch(on=True), source="ui")
+        instance.submit_group("group_a", IntentPatch(on=True), source="ui")
+    instance.submit(("light_b",), IntentPatch(on=True), source="ui")
 
 
 async def test_identical_catalog_callback_keeps_authority_without_replay(runtime):
@@ -108,11 +108,15 @@ async def test_bridge_offline_revokes_mode_and_does_not_resume(runtime):
     )
     assert instance.mode == ControlMode.OBSERVE
     assert not adapter.active
+    sent = list(adapter.sent)
     adapter.observation(
         BridgeObservation(True, 2.0, False, EvidenceQuality.UNKNOWN_SOURCE)
     )
-    with pytest.raises(RuntimeError):
-        instance.submit(("light_a",), IntentPatch(on=True), source="ui")
+    assert instance.mode == ControlMode.ACTIVE
+    assert adapter.active
+    assert not instance.snapshot("light_a").desired.on
+    assert adapter.sent == sent
+    instance.submit(("light_a",), IntentPatch(on=True), source="ui")
 
 
 async def test_unknown_capabilities_reject_brightness_before_changing_intent(runtime):

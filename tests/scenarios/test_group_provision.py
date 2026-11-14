@@ -160,7 +160,9 @@ async def test_incomplete_membership_controls_members_individually(rig):
     result = await rig.enable_active()
     assert result["type"] == "create_entry"
     assert rig.runtime.mode == ControlMode.ACTIVE
-    await rig.light("turn_on", "group_a", brightness=180)
+    assert rig.state("group_a").state == "unavailable"
+    await rig.light("turn_on", "light_a", brightness=180)
+    await rig.light("turn_on", "light_b", brightness=180)
     await rig.advance(0.5)
     await rig.report_relay("ON", "ON")
     await rig.advance(0.01)

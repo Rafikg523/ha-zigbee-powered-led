@@ -253,7 +253,7 @@ async def test_t10_restart_with_relay_off_never_turns_on(ready, hass_storage):
     await rig.publish_catalog()
     await rig.report_relay("OFF", "OFF", retain=True)
     await rig.advance(1)
-    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert rig.runtime.mode == ControlMode.ACTIVE
     light = rig.runtime.snapshot("light_a")
     assert light.desired.on is False
     assert (light.desired.brightness, light.desired.color_temp_kelvin) == (120, 3000)
@@ -278,13 +278,9 @@ async def test_t11_bridge_restart_does_not_replay_history(ready):
     await rig.report_led("light_a", "ON", retain=True, **LED_A_REPORT)
     await rig.advance(60)
     assert len(rig.publications()) == before
-    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert rig.runtime.mode == ControlMode.ACTIVE
     assert rig.state("light_a_confirmed").state == "off"
-    await command_is_inert(rig, "turn_on", "light_a")
-
-    await rig.enable_active()
-    await rig.advance(60)
-    assert len(rig.publications()) == before
+    assert rig.runtime.snapshot("light_a").desired.on is False
     assert not rig.runtime.snapshot("light_a").confirmed
 
 
@@ -324,15 +320,14 @@ async def test_t14_group_membership_change_stops_risky_operations(ready):
     changed[0]["members"] = changed[0]["members"][:1]
     rig.fire("zigbee2mqtt/bridge/groups", changed)
     await rig.settle()
-    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert rig.runtime.mode == ControlMode.ACTIVE
+    assert rig.state("group_a").state == "unavailable"
     await command_is_inert(rig, "turn_on", "group_a")
-    await command_is_inert(rig, "turn_on", "light_a")
-    result = await rig.enable_active()
-    assert result["type"] == "form"
-    assert result["errors"] == {"base": "topology_stale"}
-    await rig.advance(30)
-    assert len(rig.publications()) == before
+    await rig.light("turn_on", "light_a", brightness=180)
+    await rig.advance(0.01)
+    assert len(rig.publications()) == before + 1
     assert GROUP_SET not in topics(rig)
+    assert any(key.startswith("group_") for key in rig.runtime.notices)
 
 
 async def test_t15_mqtt_reconnect_does_not_replay_pending_on(ready):
@@ -348,7 +343,7 @@ async def test_t15_mqtt_reconnect_does_not_replay_pending_on(ready):
     await rig.report_relay("ON", "OFF", retain=True)
     await rig.advance(60)
     assert len(rig.publications()) == 1
-    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert rig.runtime.mode == ControlMode.ACTIVE
     assert rig.runtime.snapshot("light_a").desired.on is False
 
 

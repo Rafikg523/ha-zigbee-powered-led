@@ -5,8 +5,22 @@ changes. That refresh is not a new mapping. It must not sticky-fail the next
 explicit ACTIVE, and it must not replay an old ON.
 """
 
+from homeassistant.exceptions import HomeAssistantError
+
 from custom_components.zigbee_led_orchestrator.models import ControlMode
 from tests.unit.test_configuration import valid_config
+
+
+async def command_is_inert_light(rig, suffix: str) -> None:
+    published = list(rig.publications())
+    desired = rig.runtime.snapshot(suffix).desired
+    try:
+        await rig.light("turn_on", suffix, brightness=180)
+    except HomeAssistantError:
+        pass
+    await rig.advance(1)
+    assert rig.publications() == published
+    assert rig.runtime.snapshot(suffix).desired == desired
 
 
 async def test_loaded_entry_stays_active_when_devices_are_republished(rig):
@@ -65,9 +79,9 @@ async def test_unready_report_extension_does_not_stick_after_catalog_refresh(rig
     assert rig.publications() == published
 
 
-async def test_missing_mapped_device_names_the_mismatch(rig):
+async def test_one_missing_device_disables_only_that_circuit(rig):
     await rig.setup()
-    await rig.publish_catalog()
+    await rig.boot_to_off()
     devices = [
         device
         for device in rig.pilot["devices"]
@@ -75,10 +89,27 @@ async def test_missing_mapped_device_names_the_mismatch(rig):
     ]
     rig.fire("zigbee2mqtt/bridge/devices", devices, retain=False)
     await rig.settle()
+    assert rig.runtime.mode == ControlMode.ACTIVE
+    assert not rig.runtime.snapshot("light_a").available
+    assert rig.runtime.snapshot("light_b").available
+    assert any(key.startswith("light_") for key in rig.runtime.notices)
+    published = list(rig.publications())
+    await rig.light("turn_on", "light_b", brightness=180)
+    await rig.advance(0.01)
+    assert len(rig.publications()) == len(published) + 1
+    await command_is_inert_light(rig, "light_a")
+
+
+async def test_every_missing_device_stays_inactive(rig):
+    await rig.setup()
+    await rig.publish_catalog()
+    rig.fire("zigbee2mqtt/bridge/devices", [], retain=False)
+    await rig.settle()
+    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert "catalog" in rig.runtime.notices
     result = await rig.enable_active()
     assert result["type"] == "form"
-    assert result["errors"]["base"] == "mapping_mismatch"
-    assert rig.runtime.mode == ControlMode.OBSERVE
+    assert result["errors"]["base"] == "devices_missing"
     assert rig.publications() == []
 
 

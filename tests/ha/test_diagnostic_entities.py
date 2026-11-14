@@ -30,7 +30,8 @@ async def test_diagnostic_entities_report_without_control(setup):  # noqa: F811
         assert state is not None
         assert state.state != "unavailable"
     confirmed = _state(hass, entry, "light_a_confirmed")
-    assert confirmed.state == "off"
+    # Bridge online arms control, so a trusted OFF report confirms the off state.
+    assert confirmed.state == "on"
     entries = er.async_entries_for_config_entry(registry, entry.entry_id)
     diagnostic = [e for e in entries if e.unique_id.endswith(("phase", "confirmed"))]
     assert diagnostic

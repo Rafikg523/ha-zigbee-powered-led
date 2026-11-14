@@ -38,11 +38,11 @@ Obsługiwane raporty: `genOnOff.onOff`, `genLevelCtrl.currentLevel`, `lightingCo
 
 ## 4. Na miejscu włącz próby
 
-Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowania i wyłączeniu konkurujących nadawców otwórz **Konfiguruj** przy wpisie integracji i zaznacz aktywne sterowanie. Włączenie trybu nie odtwarza wcześniejszego ON. Po restarcie HA, utracie mostka lub resync trzeba aktywować ponownie.
+Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowania i wyłączeniu konkurujących nadawców sterowanie włącza się samo, gdy mostek jest online i obwody są w katalogu. Włączenie nie odtwarza wcześniejszego ON. Po restarcie HA, powrocie mostka albo resync nie trzeba włączać go ponownie. Jawne wyłączenie w **Konfiguruj → Tryb sterowania** zostaje wyłączone, dopóki nie włączysz go ręcznie.
 
 Od wersji 0.1.0b5, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
 
-Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.1.3`. Po restarcie ponownie włącz ACTIVE; żadne stare ON nie jest odtwarzane.
+Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.1.3`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
 
 ## Powrót do poprzedniego sterowania
 

@@ -50,6 +50,8 @@ def control_error(exc: Exception) -> str:
         text = str(exc)
         if text.startswith("topology changed"):
             return "topology_stale"
+        if text.startswith("configured devices"):
+            return "devices_missing"
         if text.startswith("report extension"):
             return "report_extension_unavailable"
         if text.startswith("invalid") or "closed" in text:
@@ -406,7 +408,8 @@ class OptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             try:
                 self.config_entry.runtime_data.set_mode(
-                    ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE
+                    ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE,
+                    manual=True,
                 )
             except (RuntimeError, ValueError, AttributeError) as exc:
                 errors["base"] = control_error(exc)

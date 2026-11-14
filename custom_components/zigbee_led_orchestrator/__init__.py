@@ -9,7 +9,10 @@ PLATFORMS = ["light", "sensor", "binary_sensor"]
 
 
 async def async_setup_entry(hass, entry) -> bool:
-    """Start one instance in observation mode and attach its platforms."""
+    """Start one instance and attach its platforms.
+
+    Control turns on by itself when the bridge and catalog are ready.
+    """
     from .configuration import validate_config
     from .group_provisioner import stored_group_ids
     from .mqtt_adapter import MqttAdapter
@@ -47,6 +50,20 @@ async def async_setup_entry(hass, entry) -> bool:
             hass.config_entries.async_update_entry(entry, data=data)
 
         runtime.set_group_id_listener(remember_group)
+        runtime.set_language(getattr(hass.config, "language", "en"))
+
+        def publish_notice(key: str, message: str | None) -> None:
+            from homeassistant.components import persistent_notification
+
+            notification_id = f"{DOMAIN}_{entry.entry_id}_{key}"
+            if message is None:
+                persistent_notification.async_dismiss(hass, notification_id)
+                return
+            persistent_notification.async_create(
+                hass, message, "Zigbee LED Orchestrator", notification_id
+            )
+
+        runtime.set_notice_listener(publish_notice)
         await runtime.start()
         entry.runtime_data = runtime
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -68,6 +85,11 @@ async def async_unload_entry(hass, entry) -> bool:
         return False
     runtime = entry.runtime_data
     runtime.set_preferences_listener(None)
+    runtime.set_notice_listener(None)
+    from homeassistant.components import persistent_notification
+
+    for key in tuple(getattr(runtime, "notices", ())):
+        persistent_notification.async_dismiss(hass, f"{DOMAIN}_{entry.entry_id}_{key}")
     store = hass.data.pop(f"{DOMAIN}_store", None)
     if store is not None:
         await store.async_save(runtime.preferences())
