@@ -43,6 +43,7 @@ _KIND_COUNTERS = {
     CommandKind.RELAY_ON: "relay_on",
     CommandKind.RELAY_OFF: "relay_off",
     CommandKind.LED_SET: "led_set",
+    CommandKind.LED_OFF: "led_off",
     CommandKind.GROUP_SET: "group_set",
     CommandKind.PROBE: "probes",
 }
@@ -147,8 +148,12 @@ class Reconciler:
         self._subscribers: set[Callable[[frozenset[str]], None]] = set()
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._sends: set[asyncio.Task[SendResult]] = set()
+        self._preparations: set[asyncio.Task[SendResult]] = set()
         self._relay_pending: dict[str, tuple[float, asyncio.Task[SendResult]]] = {}
         self._off_pending: dict[str, tuple[float, asyncio.Task[SendResult]]] = {}
+        self._led_off_pending: dict[
+            str, tuple[tuple[int, int, int], float, asyncio.Task[SendResult]]
+        ] = {}
         self._readiness_deadlines: dict[str, tuple[int, int, float]] = {}
         self._in_flight: dict[str, InFlightCommand] = {}
         self._interrupted_on: dict[str, InFlightCommand] = {}
@@ -182,7 +187,11 @@ class Reconciler:
             request.kind,
             [token.generation for token in request.tokens],
         )
-        if request.kind in (CommandKind.LED_SET, CommandKind.GROUP_SET):
+        if request.kind in (
+            CommandKind.LED_SET,
+            CommandKind.GROUP_SET,
+            CommandKind.LED_OFF,
+        ):
             for token in request.tokens:
                 self._last_led_publish[token.light_id] = (
                     request.operation_id,
@@ -235,9 +244,20 @@ class Reconciler:
                 token.light_id
             ):
                 return False
-            if request.kind == CommandKind.RELAY_OFF and desired.on:
+            if (
+                request.kind in (CommandKind.RELAY_OFF, CommandKind.LED_OFF)
+                and desired.on
+            ):
                 return False
-            if request.kind != CommandKind.RELAY_OFF and not desired.on:
+            if request.kind == CommandKind.LED_OFF and not self._trusted_relay(
+                token.light_id, SwitchState.ON
+            ):
+                return False
+            if (
+                request.kind
+                not in (CommandKind.RELAY_OFF, CommandKind.LED_OFF, CommandKind.PROBE)
+                and not desired.on
+            ):
                 return False
             if request.kind in (
                 CommandKind.LED_SET,
@@ -382,6 +402,10 @@ class Reconciler:
                 if not self._trusted_relay(item, SwitchState.OFF)
             )
         for item in changed:
+            if result[item].on:
+                pending_off = self._led_off_pending.pop(item, None)
+                if pending_off is not None:
+                    pending_off[2].cancel()
             previous = self._workers.get(item)
             if (
                 patch.on is None
@@ -764,7 +788,8 @@ class Reconciler:
             tokens=(self._token(item),),
             resources=(circuit.relay_resource if relay else circuit.led_resource,),
             priority=CommandPriority.OFF
-            if kind == CommandKind.RELAY_OFF
+            if kind in (CommandKind.RELAY_OFF, CommandKind.LED_OFF)
+            or (kind == CommandKind.PROBE and not self._desired.get(item).on)
             else CommandPriority.NORMAL,
             operation_id=f"{item}-{next(self._sequence)}",
             kind=kind,
@@ -854,10 +879,132 @@ class Reconciler:
             if self._current(item, generation):
                 self._phase(item, Phase.ERROR, "internal_error")
 
+    async def _prepare_led_off(
+        self, item: str, epoch: tuple[int, int, int], deadline: float
+    ) -> SendResult:
+        def authorized() -> bool:
+            obs = self._observations.snapshot(item)
+            return (
+                not self._closed
+                and self._enabled
+                and not self._desired.get(item).on
+                and (obs.power_epoch, obs.bridge_epoch, self._control_epoch) == epoch
+                and self._trusted_relay(item, SwitchState.ON)
+                and self._clock.now() < deadline
+            )
+
+        result = SendResult(SendStatus.STALE, "stale")
+        while authorized():
+            result = await asyncio.shield(
+                self._send(item, CommandKind.LED_OFF, {"state": "OFF", "transition": 0})
+            )
+            # STALE was never published. A parameter-only update may renew
+            # its token inside this same OFF operation and original deadline.
+            if result.status != SendStatus.STALE:
+                break
+        if result.status != SendStatus.SENT:
+            return result
+        while authorized():
+            result, _started = await self._probe(item, "off")
+            if result.status != SendStatus.STALE:
+                break
+        return result
+
+    async def _confirm_off_before_power_cut(
+        self, item: str, generation: int
+    ) -> str | None:
+        """Try a confirmed LED OFF; the relay cutoff remains bounded and mandatory."""
+        obs = self._observations.snapshot(item)
+        epoch = (obs.power_epoch, obs.bridge_epoch, self._control_epoch)
+        pending = self._led_off_pending.get(item)
+        if pending is None or pending[0] != epoch:
+            started = self._clock.now()
+            if pending is not None:
+                pending[2].cancel()
+            task = asyncio.create_task(
+                self._prepare_led_off(
+                    item, epoch, started + self._policy.verification_timeout_ms / 1000
+                )
+            )
+            self._preparations.add(task)
+
+            def prepared(done):
+                self._preparations.discard(done)
+                if not done.cancelled():
+                    done.exception()
+                self._events[item].set()
+
+            task.add_done_callback(prepared)
+            self._led_off_pending[item] = (epoch, started, task)
+        else:
+            _epoch, started, task = pending
+        deadline = started + self._policy.verification_timeout_ms / 1000
+        await self._wait(
+            item,
+            generation,
+            lambda: task.done() or not self._trusted_relay(item, SwitchState.ON),
+            max(0.0, deadline - self._clock.now()),
+        )
+        if not self._current(item, generation):
+            return None
+        if self._trusted_relay(item, SwitchState.OFF):
+            return None
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self._led_off_pending.pop(item, None)
+            self._count("timeouts")
+            return "led_off_confirmation_timeout"
+        if (
+            task.cancelled()
+            or task.exception() is not None
+            or task.result().status != SendStatus.SENT
+        ):
+            return "led_off_failed"
+        confirmed = await self._wait(
+            item,
+            generation,
+            lambda: (
+                self._trusted_relay(item, SwitchState.OFF)
+                or (
+                    (current := self._observations.snapshot(item)).power_epoch
+                    == epoch[0]
+                    and current.bridge_epoch == epoch[1]
+                    and current.led_state == SwitchState.OFF
+                    and current.led_quality == EvidenceQuality.DEVICE_REPORT
+                    and current.led_retained is False
+                    and current.led_received_at is not None
+                    and current.led_received_at
+                    > self._last_led_publish.get(item, ("unknown", float("inf")))[1]
+                )
+            ),
+            max(0.0, deadline - self._clock.now()),
+        )
+        if not self._current(item, generation):
+            return None
+        if not confirmed:
+            self._count("timeouts")
+            return "led_off_confirmation_timeout"
+        return None
+
     async def _run_off(self, item: str, generation: int) -> None:
         circuit = self._circuits[item]
         self._readiness_deadlines.pop(item, None)
         self._phase(item, Phase.APPLYING)
+        warning = None
+        if (
+            self._probe_enabled
+            and self._trusted_relay(item, SwitchState.ON)
+            and item not in self._off_pending
+        ):
+            warning = await self._confirm_off_before_power_cut(item, generation)
+            if not self._current(item, generation):
+                return
+            if self._trusted_relay(item, SwitchState.OFF):
+                self._led_off_pending.pop(item, None)
+                self._relay_pending.pop(item, None)
+                self._phase(item, Phase.OFF, warning)
+                return
         pending = self._off_pending.get(item)
         if pending and self._clock.now() < (
             pending[0] + self._policy.relay_command_timeout_ms / 1000
@@ -897,7 +1044,8 @@ class Reconciler:
             # A confirmed explicit OFF also resolves an earlier ON timeout.
             # Only a new user intent may start the next ON command.
             self._relay_pending.pop(item, None)
-            self._phase(item, Phase.OFF)
+            self._led_off_pending.pop(item, None)
+            self._phase(item, Phase.OFF, warning)
         else:
             self._phase(item, Phase.ERROR, "relay_confirmation_timeout")
 
@@ -1237,9 +1385,12 @@ class Reconciler:
         if self._closed:
             return
         self._closed = True
-        for task in self._workers.values():
+        preparations = tuple(self._preparations)
+        for task in (*self._workers.values(), *preparations):
             task.cancel()
-        await asyncio.gather(*self._workers.values(), return_exceptions=True)
+        await asyncio.gather(
+            *self._workers.values(), *preparations, return_exceptions=True
+        )
         await self._arbiter.close()
         if self._sends:
             await asyncio.gather(*self._sends, return_exceptions=True)

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0b4 — potwierdzone LED OFF
+
+- Programowe wyłączenie zasilonego obwodu najpierw wysyła LED OFF i odczytuje stan, a po rzeczywistym potwierdzeniu odcina przekaźnik.
+- Brak odpowiedzi lub błąd kontrolera nie blokuje wyłączenia: etap LED ma ograniczony czas oczekiwania, a diagnostyka zachowuje przyczynę niepotwierdzenia.
+- Nowe ON anuluje przyszłe stare odcięcie; zmiany parametrów nie mnożą LED OFF i nie przedłużają oczekiwania. Preferencje jasności/CCT pozostają zachowane.
+- Nie zmieniono ustawień startowych kontrolerów; skuteczność zapobiegania błyskowi wymaga sprawdzenia firmware na instalacji.
+
 ## 0.1.0b3 — samodzielny rozruch i odczyty kontrolne
 
 - Nowe ON odczytuje nieznany stan przekaźnika zamiast kończyć się `relay_state_unknown`; nie wymaga ręcznego odświeżania Z2M.

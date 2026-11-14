@@ -2,11 +2,11 @@
 
 Integracja Home Assistant dla dwóch kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Opcjonalnie steruje oboma LED-ami przez istniejącą grupę Zigbee2MQTT.
 
-**Wersja testowa 0.1.0b3:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
+**Wersja testowa 0.1.0b4:** można zainstalować i skonfigurować. Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania; nie jest to wydanie produkcyjne.
 
 ## Instalacja i konfiguracja
 
-1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b3` lub pobierz aktualną wersję z domyślnej gałęzi.
+1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration**. Włącz pokazywanie wersji beta i wybierz `v0.1.0b4` lub pobierz aktualną wersję z domyślnej gałęzi.
 2. Zainstaluj i uruchom ponownie Home Assistanta.
 3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**.
 4. Wskaż bazowy temat Z2M, dwa kontrolery i ich kanały zasilania. Grupa jest opcjonalna; jej skład musi odpowiadać dokładnie obu LED-om.

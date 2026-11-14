@@ -102,6 +102,15 @@ async def test_restart_with_relay_off_and_no_spontaneous_reports_runs_two_cycles
         await raw(led, "lightingColorCtrl", {"colorTemperature": 333})
         assert rig.runtime.snapshot("light_a").confirmed
         await rig.light("turn_off", "light_a")
+        await rig.advance(0.25)
+        assert traffic(rig)[-2:] == [
+            (LED["light_a"] + "/set", {"state": "OFF", "transition": 0}),
+            (LED["light_a"] + "/get", {"state": ""}),
+        ]
+        assert rig.runtime.snapshot("light_a").desired.brightness == 180
+        await raw(led, "genOnOff", {"onOff": 0}, retain=True)
+        assert traffic(rig)[-1][0] == LED["light_a"] + "/get"
+        await raw(led, "genOnOff", {"onOff": 0})
         await rig.advance(0.15)
         assert traffic(rig)[-1] == (RELAY + "/set", {"state_l1": "OFF"})
         await raw(relay, "genOnOff", {"onOff": 0})
@@ -152,6 +161,22 @@ async def test_existing_group_uses_one_set_and_individual_read_confirmations(pil
         await raw(ieee, "genOnOff", {"onOff": 1})
         await raw(ieee, "genLevelCtrl", {"currentLevel": 199})
     assert rig.runtime.group_snapshot("group_a").confirmed
+    before = len(traffic(rig))
+    await rig.light("turn_off", "group_a")
+    await rig.advance(0.5)
+    shutdown = traffic(rig)[before:]
+    assert not any(t == RELAY + "/set" for t, _ in shutdown)
+    assert {t for t, p in shutdown if p.get("state") == "OFF"} == {
+        LED["light_a"] + "/set",
+        LED["light_b"] + "/set",
+    }
+    for ieee in ("0x0000000000000002", "0x0000000000000003"):
+        await raw(ieee, "genOnOff", {"onOff": 0})
+    await rig.advance(0.25)
+    assert sum(t == RELAY + "/set" for t, _ in traffic(rig)[before:]) == 2
+    for endpoint in (1, 2):
+        await raw(relay, "genOnOff", {"onOff": 0}, endpoint=endpoint)
+    assert rig.phase("light_a") == rig.phase("light_b") == "OFF"
 
 
 async def test_off_while_led_is_booting_cancels_settings(pilot):
@@ -169,7 +194,10 @@ async def test_off_while_led_is_booting_cancels_settings(pilot):
     await raw(relay, "genOnOff", {"onOff": 0})
     await raw("0x0000000000000002", "genOnOff", {"onOff": 1})
     await rig.advance(10)
-    assert not any(t == LED["light_a"] + "/set" for t, _ in traffic(rig))
+    assert not any(
+        t == LED["light_a"] + "/set" and p.get("state") != "OFF"
+        for t, p in traffic(rig)
+    )
     assert rig.phase("light_a") == "OFF"
 
 
