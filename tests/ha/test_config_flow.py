@@ -197,9 +197,15 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     flow = OptionsFlow()
     flow.hass = hass
     flow.handler = entry.entry_id
+    hass.config.language = "en"
     menu = await flow.async_step_init()
     assert menu["type"] == "menu"
-    assert menu["menu_options"] == ["add_circuit", "create_group", "control"]
+    assert menu["step_id"] == "choose"
+    assert menu["menu_options"] == {
+        "add_circuit": "Add circuit",
+        "create_group": "Create group",
+        "control": "Control mode",
+    }
     form = await flow.async_step_add_circuit()
     assert {str(key) for key in form["data_schema"].schema} == {
         "name",
@@ -236,6 +242,17 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert entry.data["lights"][0]["name"] == "Kuchnia"
     assert entry.data["groups"] == []
     assert scheduled == [entry.entry_id]
+
+
+def test_menu_labels_follow_the_ha_language():
+    from custom_components.zigbee_led_orchestrator.config_flow import menu_options_for
+
+    assert menu_options_for("pl") == {
+        "add_circuit": "Dodaj obwód",
+        "create_group": "Utwórz grupę",
+        "control": "Tryb sterowania",
+    }
+    assert list(menu_options_for("de")) == ["add_circuit", "create_group", "control"]
 
 
 def _two_pairs():

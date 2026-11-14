@@ -25,6 +25,31 @@ _POLICY_DEFAULTS = (
     ("boot_grace_ms", 2500),
     ("readiness_timeout_ms", 8000),
 )
+_MENU_STEPS = ("add_circuit", "create_group", "control")
+_MENU_LABELS = {
+    "en": {
+        "add_circuit": "Add circuit",
+        "create_group": "Create group",
+        "control": "Control mode",
+    },
+    "pl": {
+        "add_circuit": "Dodaj obwód",
+        "create_group": "Utwórz grupę",
+        "control": "Tryb sterowania",
+    },
+}
+
+
+def menu_options_for(language: str) -> dict[str, str]:
+    """Return menu labels in the flow result.
+
+    A list of step ids is labeled by the frontend from cached translations.
+    When that cache predates the menu, each row renders as an empty chevron.
+    A mapping is shown as-is.
+    """
+    code = "pl" if str(language).lower().startswith("pl") else "en"
+    labels = _MENU_LABELS[code]
+    return {step: labels[step] for step in _MENU_STEPS}
 
 
 async def discover_topology(hass, base_topic: str) -> Topology:
@@ -350,9 +375,12 @@ class OptionsFlow(config_entries.OptionsFlow):
     """Change mode or append one circuit without a second integration entry."""
 
     async def async_step_init(self, user_input=None):
+        return await self.async_step_choose(user_input)
+
+    async def async_step_choose(self, user_input=None):
         return self.async_show_menu(
-            step_id="init",
-            menu_options=["add_circuit", "create_group", "control"],
+            step_id="choose",
+            menu_options=menu_options_for(self.hass.config.language),
         )
 
     async def async_step_control(self, user_input=None):
