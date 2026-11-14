@@ -49,6 +49,7 @@ class CommandArbiter:
         min_send_interval_ms: int,
         publication_timeout_ms: int,
         slider_coalesce_ms: int,
+        on_publish: Callable[[SendRequest, float], None] | None = None,
     ) -> None:
         for name, value in (
             ("min_send_interval_ms", min_send_interval_ms),
@@ -60,6 +61,7 @@ class CommandArbiter:
         self._transport = transport
         self._clock = clock
         self._is_current = is_current
+        self._on_publish = on_publish
         self._interval = min_send_interval_ms / 1000
         self._timeout = publication_timeout_ms / 1000
         self._coalesce = slider_coalesce_ms / 1000
@@ -266,6 +268,8 @@ class CommandArbiter:
                     self._clock.now(),
                     self._interval,
                 )
+                if self._on_publish is not None:
+                    self._on_publish(item.request, self._clock.now())
                 started.set()
                 await self._transport.publish(
                     item.request.topic, item.request.payload, retain=False
