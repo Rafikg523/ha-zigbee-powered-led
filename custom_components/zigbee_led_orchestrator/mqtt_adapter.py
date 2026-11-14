@@ -409,6 +409,39 @@ class MqttAdapter:
         ):
             raise RuntimeError("control unavailable")
         allowed = set()
+        reads: dict[str, set[str]] = {}
+        for channel in self._config.relay_channels:
+            try:
+                device = self.topology.resolve_device(channel.device_ieee)
+                if channel.endpoint in device.endpoints:
+                    reads.setdefault(device.topic + "/get", set()).add(
+                        channel.state_key
+                    )
+            except KeyError:
+                pass
+        for light in self._config.lights:
+            try:
+                device = self.topology.resolve_device(light.device_ieee)
+                if light.endpoint in device.endpoints:
+                    reads.setdefault(device.topic + "/get", set()).update(
+                        ("state", "brightness", "color_temp")
+                    )
+            except KeyError:
+                pass
+        if topic.endswith("/get"):
+            if (
+                not self._config.report_extension
+                or not self.reports.ready
+                or topic not in reads
+            ):
+                raise RuntimeError("unknown or stale read topic")
+            if (
+                not payload
+                or not set(payload) <= reads[topic]
+                or any(value != "" for value in payload.values())
+            ):
+                raise ValueError("invalid read payload")
+            allowed.add(topic)
         for config in (*self._config.relay_channels, *self._config.lights):
             try:
                 device = self.topology.resolve_device(config.device_ieee)

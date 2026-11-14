@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Callable
 
+from .const import RUNTIME_VERSION
 from .desired_store import DesiredStateStore
 from .group_coordinator import GroupCoordinator
 from .light_capabilities import LightCapabilities
@@ -162,6 +163,7 @@ class Runtime:
             policy=self.config.policies,
             groups=tuple(groups),
             metrics=self.metrics,
+            probe_enabled=self.config.report_extension,
         )
         self._groups = GroupCoordinator(
             engine,
@@ -310,6 +312,7 @@ class Runtime:
             raise KeyError(light_id)
         redact = self._redactor()
         data: dict[str, object] = {
+            "runtime_version": RUNTIME_VERSION,
             "mode": self.mode.value,
             "report_extension_enabled": self.config.report_extension,
             "report_extension_ready": bool(
@@ -351,6 +354,8 @@ class Runtime:
                     "led_state": observed.led_state.value,
                     "led_quality": observed.led_quality.value,
                     "led_retained": observed.led_retained,
+                    "brightness": observed.brightness,
+                    "color_temp_kelvin": observed.color_temp_kelvin,
                     "power_epoch": observed.power_epoch,
                     "bridge_epoch": observed.bridge_epoch,
                 },

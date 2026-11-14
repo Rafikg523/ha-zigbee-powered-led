@@ -172,3 +172,56 @@ async def test_gap_revokes_adapter_authority_and_runtime_evidence(bridge, mqtt_a
     assert adapter.last_error == "report_sequence_gap; resync required"
     with pytest.raises(RuntimeError):
         await adapter.publish("zigbee2mqtt/room/relay/set", {"state_l1": "ON"})
+
+
+async def test_get_preserves_partial_proof_and_rejects_arbitrary_queries(
+    bridge, mqtt_api
+):
+    adapter, observations = bridge
+    callbacks, _, _ = mqtt_api
+    session = handshake_request()["session"]
+    await message(
+        callbacks,
+        "zigbee2mqtt/orchestrator/report",
+        {"session": session, "sequence": 0, "type": "ready"},
+    )
+    adapter.set_active(True)
+    for sequence, ieee in ((1, "0x0000000000000001"), (2, "0x0000000000000002")):
+        await message(
+            callbacks,
+            "zigbee2mqtt/orchestrator/report",
+            {
+                "session": session,
+                "sequence": sequence,
+                "type": "readResponse",
+                "ieee": ieee,
+                "endpoint": 1,
+                "cluster": "genOnOff",
+                "data": {"onOff": 1},
+            },
+        )
+    await adapter.publish("zigbee2mqtt/room/led/get", {"brightness": ""})
+    await message(
+        callbacks,
+        "zigbee2mqtt/orchestrator/report",
+        {
+            "session": session,
+            "sequence": 3,
+            "type": "readResponse",
+            "ieee": "0x0000000000000002",
+            "endpoint": 1,
+            "cluster": "genLevelCtrl",
+            "data": {"currentLevel": 120},
+        },
+    )
+    assert observations[-1].state.value == "ON"
+    assert observations[-1].brightness == 120
+    await adapter.publish("zigbee2mqtt/room/relay/get", {"state_l1": ""})
+    for topic, payload in (
+        ("zigbee2mqtt/room/relay/get", {"state_l9": ""}),
+        ("zigbee2mqtt/room/led/get", {"state": "ON"}),
+        ("zigbee2mqtt/group/get", {"state": ""}),
+        ("zigbee2mqtt/unknown/get", {"state": ""}),
+    ):
+        with pytest.raises((RuntimeError, ValueError)):
+            await adapter.publish(topic, payload)

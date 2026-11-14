@@ -44,6 +44,7 @@ _KIND_COUNTERS = {
     CommandKind.RELAY_OFF: "relay_off",
     CommandKind.LED_SET: "led_set",
     CommandKind.GROUP_SET: "group_set",
+    CommandKind.PROBE: "probes",
 }
 
 
@@ -108,8 +109,10 @@ class Reconciler:
         enabled: bool = False,
         groups: tuple[GroupCircuit, ...] = (),
         metrics: Metrics | None = None,
+        probe_enabled: bool = False,
     ) -> None:
         self._metrics = metrics
+        self._probe_enabled = probe_enabled
         self._phase_since: dict[str, float] = {}
         self._circuits = {item.light_id: item for item in circuits}
         if len(self._circuits) != len(circuits):
@@ -153,6 +156,7 @@ class Reconciler:
         self._last_relay: dict[str, SwitchState] = {}
         self._last_led_publish: dict[str, tuple[str, float]] = {}
         self._capabilities: dict[str, LightCapabilities] = {}
+        self._probes: dict[tuple, tuple[int, float, asyncio.Task[SendResult]]] = {}
         self._sequence = count()
         self._arbiter = CommandArbiter(
             transport,
@@ -213,6 +217,16 @@ class Reconciler:
                 or token.control_epoch != self._control_epoch
             ):
                 return False
+            if request.kind == CommandKind.PROBE:
+                circuit = self._circuits[token.light_id]
+                relay_get = circuit.relay_topic.removesuffix("/set") + "/get"
+                led_get = circuit.led_topic.removesuffix("/set") + "/get"
+                if request.topic not in (relay_get, led_get):
+                    return False
+                if request.topic == led_get and not self._trusted_relay(
+                    token.light_id, SwitchState.ON
+                ):
+                    return False
             if request.kind == CommandKind.RELAY_ON and not self._trusted_relay(
                 token.light_id, SwitchState.OFF
             ):
@@ -341,7 +355,25 @@ class Reconciler:
                 if patch.color_temp_kelvin is not None:
                     capability.device_mired(patch.color_temp_kelvin)
         before = {item: self._desired.get(item) for item in light_ids}
-        result = self._desired.apply(light_ids, patch, source=source)
+        # A completed read failure must not require an artificial OFF/ON dance.
+        # Renew authority only for a new explicit request, never from a report.
+        renew = (
+            self._probe_enabled
+            and patch.on is True
+            and any(
+                self._machines[item].phase == Phase.ERROR
+                and self._reasons[item]
+                in ("relay_read_timeout", "relay_read_failed", "readiness_timeout")
+                and (worker := self._workers.get(item)) is not None
+                and worker.done()
+                for item in light_ids
+            )
+        )
+        if renew:
+            self._probes = {
+                k: v for k, v in self._probes.items() if k[0] not in light_ids
+            }
+        result = self._desired.apply(light_ids, patch, source=source, force=renew)
         changed = {item for item in light_ids if result[item] != before[item]}
         if patch.on is False:
             changed.update(
@@ -493,6 +525,18 @@ class Reconciler:
                     self._last_relay[item] = SwitchState.OFF
                 else:
                     self._last_relay.pop(item, None)
+                if (
+                    self._probe_enabled
+                    and (worker := self._workers.get(item)) is not None
+                    and worker.done()
+                    and self._machines[item].phase == Phase.UNCONFIRMED
+                    and self._desired.get(item).on
+                    and self._trusted_relay(item, SwitchState.ON)
+                    and self._led_matches(item, self._desired.get(item), obs)
+                ):
+                    # Fresh matching reports may finish verification after the
+                    # bounded worker has stopped; they never trigger a command.
+                    self._phase(item, Phase.ON)
                 self._events[item].set()
         self._announce(delta.light_ids)
 
@@ -517,6 +561,23 @@ class Reconciler:
             remaining = deadline - self._clock.now()
             if remaining <= 0:
                 break
+            if (
+                self._probe_enabled
+                and obs.power_started_at is not None
+                and self._clock.now()
+                >= obs.power_started_at + self._policy.boot_grace_ms / 1000
+            ):
+                result, _started = await self._probe(item, "ready")
+                if not self._current(item, generation):
+                    return
+                if result.status != SendStatus.SENT:
+                    break
+                if is_ready(
+                    self._observations.snapshot(item),
+                    now=self._clock.now(),
+                    boot_grace_seconds=self._policy.boot_grace_ms / 1000,
+                ):
+                    continue
             grace = (
                 (obs.power_started_at or self._clock.now())
                 + self._policy.boot_grace_ms / 1000
@@ -685,12 +746,20 @@ class Reconciler:
         return False
 
     def _send(
-        self, item: str, kind: CommandKind, payload: dict[str, object]
+        self,
+        item: str,
+        kind: CommandKind,
+        payload: dict[str, object],
+        *,
+        probe_relay: bool = False,
     ) -> asyncio.Task[SendResult]:
         circuit = self._circuits[item]
-        relay = kind in (CommandKind.RELAY_ON, CommandKind.RELAY_OFF)
+        relay = kind in (CommandKind.RELAY_ON, CommandKind.RELAY_OFF) or probe_relay
+        topic = circuit.relay_topic if relay else circuit.led_topic
+        if kind == CommandKind.PROBE:
+            topic = topic.removesuffix("/set") + "/get"
         request = SendRequest(
-            topic=circuit.relay_topic if relay else circuit.led_topic,
+            topic=topic,
             payload=payload,
             tokens=(self._token(item),),
             resources=(circuit.relay_resource if relay else circuit.led_resource,),
@@ -705,6 +774,50 @@ class Reconciler:
         self._sends.add(task)
         task.add_done_callback(self._sends.discard)
         return task
+
+    async def _probe(self, item: str, stage: str) -> tuple[SendResult, float]:
+        """One bounded read per stage; slider changes share an outstanding read."""
+        obs = self._observations.snapshot(item)
+        generation = self._desired.get(item).generation
+        marker = self._last_led_publish.get(item) if stage == "verify" else None
+        key = (
+            item,
+            stage,
+            obs.power_epoch,
+            obs.bridge_epoch,
+            self._control_epoch,
+            marker,
+        )
+        previous = self._probes.get(key)
+        timeout = (
+            self._policy.relay_command_timeout_ms
+            if stage == "relay"
+            else self._policy.readiness_timeout_ms
+        ) / 1000
+        if previous is not None:
+            old_generation, started, task = previous
+            result = await asyncio.shield(task)
+            if result.status != SendStatus.STALE and (
+                old_generation == generation or self._clock.now() < started + timeout
+            ):
+                return result, started
+        # Keep only the current attempt for each light/stage.
+        self._probes = {k: v for k, v in self._probes.items() if k[:2] != key[:2]}
+        payload = {"state": ""}
+        if stage == "relay":
+            payload = {self._circuits[item].relay_state_key: ""}
+        elif stage == "verify":
+            target = self._desired.get(item)
+            if target.brightness is not None:
+                payload["brightness"] = ""
+            if target.color_temp_kelvin is not None:
+                payload["color_temp"] = ""
+        started = self._clock.now()
+        task = self._send(
+            item, CommandKind.PROBE, payload, probe_relay=stage == "relay"
+        )
+        self._probes[key] = (generation, started, task)
+        return await asyncio.shield(task), started
 
     def _trusted_relay(
         self, item: str, state: SwitchState, after: float | None = None
@@ -824,6 +937,36 @@ class Reconciler:
             if result.status == SendStatus.SENT:
                 self._relay_pending.pop(item, None)
 
+        if self._probe_enabled and not (
+            self._trusted_relay(item, SwitchState.ON)
+            or self._trusted_relay(item, SwitchState.OFF)
+        ):
+            result, started = await self._probe(item, "relay")
+            if not self._current(item, generation):
+                return
+            if result.status != SendStatus.SENT:
+                self._phase(item, Phase.ERROR, "relay_read_failed")
+                return
+            known = await self._wait(
+                item,
+                generation,
+                lambda: (
+                    self._trusted_relay(item, SwitchState.ON, started)
+                    or self._trusted_relay(item, SwitchState.OFF, started)
+                ),
+                max(
+                    0.0,
+                    started
+                    + self._policy.relay_command_timeout_ms / 1000
+                    - self._clock.now(),
+                ),
+            )
+            if not self._current(item, generation):
+                return
+            if not known:
+                self._phase(item, Phase.ERROR, "relay_read_timeout")
+                return
+
         pending = self._relay_pending.get(item)
         if pending and not self._trusted_relay(item, SwitchState.ON):
             pending_started, pending_send = pending
@@ -924,6 +1067,28 @@ class Reconciler:
                 self._readiness_deadlines.pop(item, None)
                 self._phase(item, Phase.ERROR, "readiness_timeout")
                 return
+            if (
+                self._probe_enabled
+                and obs.power_started_at is not None
+                and self._clock.now() >= obs.power_started_at + boot
+            ):
+                result, _started = await self._probe(item, "ready")
+                if not self._current(item, generation):
+                    return
+                if result.status != SendStatus.SENT:
+                    self._phase(
+                        item, Phase.ERROR, result.reason or "readiness_read_failed"
+                    )
+                    return
+                # Recheck reports that may have arrived during publication.
+                if is_ready(
+                    self._observations.snapshot(item),
+                    now=self._clock.now(),
+                    boot_grace_seconds=boot,
+                ):
+                    continue
+            # A queued read must not extend the original readiness deadline.
+            remaining = max(0.0, deadline - self._clock.now())
             # Wake at the grace boundary as well as on reports.
             grace = (
                 obs.power_started_at + boot - self._clock.now()
@@ -994,6 +1159,14 @@ class Reconciler:
         ready_epoch: int,
         bridge_epoch: int,
     ) -> None:
+        if self._probe_enabled:
+            result, _started = await self._probe(item, "verify")
+            if not self._current(item, generation):
+                return
+            if result.status != SendStatus.SENT:
+                self._reasons[item] = result.reason or "verification_read_failed"
+                self._announce({item})
+                return
         confirmed = await self._wait(
             item,
             generation,
@@ -1010,8 +1183,13 @@ class Reconciler:
             ),
             self._policy.verification_timeout_ms / 1000,
         )
-        if confirmed and self._current(item, generation):
-            self._phase(item, Phase.ON)
+        if self._current(item, generation):
+            if confirmed:
+                self._phase(item, Phase.ON)
+            elif self._probe_enabled and self._machines[item].phase != Phase.ON:
+                self._reasons[item] = "verification_timeout"
+                self._count("timeouts")
+                self._announce({item})
 
     def led_payload(self, light_id: str) -> dict[str, object]:
         """Device-range command payload for the member's current desired state."""

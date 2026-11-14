@@ -53,7 +53,11 @@ async def test_raw_reports_drive_on_and_physical_off_without_replay(rig):
     # A genuine partial brightness report suffices for readiness, not confirmation.
     await raw(led, 1, "genLevelCtrl", {"currentLevel": 50})
     await rig.advance(3)
-    assert rig.publications()[-1][0] == "zigbee2mqtt/room/led1/set"
+    assert rig.publications()[-2][0] == "zigbee2mqtt/room/led1/set"
+    assert rig.publications()[-1] == (
+        "zigbee2mqtt/room/led1/get",
+        {"state": "", "brightness": "", "color_temp": ""},
+    )
     assert not rig.runtime.snapshot("light_a").confirmed
     await raw(led, 1, "genOnOff", {"onOff": 1})
     await raw(led, 1, "genLevelCtrl", {"currentLevel": 179})

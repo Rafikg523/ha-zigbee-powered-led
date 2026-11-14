@@ -12,6 +12,7 @@ COUNTERS = (
     "relay_off",
     "led_set",
     "group_set",
+    "probes",
     "timeouts",
     "errors",
     "conflicts",

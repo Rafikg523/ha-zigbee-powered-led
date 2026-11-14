@@ -40,7 +40,9 @@ Obsługiwane raporty: `genOnOff.onOff`, `genLevelCtrl.currentLevel`, `lightingCo
 
 Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowania i wyłączeniu konkurujących nadawców otwórz **Konfiguruj** przy wpisie integracji i zaznacz aktywne sterowanie. Włączenie trybu nie odtwarza wcześniejszego ON. Po restarcie HA, utracie mostka lub resync trzeba aktywować ponownie.
 
-Po nowej sesji najpierw uzyskaj świeże raporty przekaźników: na miejscu użyj fizycznych przycisków albo pojedynczego odczytu stanu w Z2M (ikona odświeżenia właściwości). Stan z cache nie wystarczy. Raporty LED-ów muszą nadejść już po potwierdzonym ON ich zasilania. Gdy LED nie raportuje spontanicznie, pojedynczy ręczny odczyt stanu/jasności w Z2M pozwala sprawdzić ścieżkę; integracja sama nie wykonuje sond ani pętli ponowień. Brak spontanicznych raportów należy odnotować jako ograniczenie pilotażu.
+W wersji 0.1.0b3, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
+
+Po aktualizacji **uruchom ponownie cały Home Assistant**. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.1.0b3`. Po restarcie ponownie włącz ACTIVE; żadne stare ON nie jest odtwarzane.
 
 ## Powrót do poprzedniego sterowania
 
