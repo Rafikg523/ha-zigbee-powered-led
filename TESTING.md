@@ -12,7 +12,7 @@ To lista do odbioru pilotażu, nie raport wykonanych prób. Automatyczne testy n
 
 ## Kolejność prób
 
-1. Włącz ACTIVE. Włącz i wyłącz pierwszy obwód, potem drugi. Sprawdź rzeczywiste światło, niezależność kanałów, phase i confirmed. OFF ma odcinać przekaźnik bez poprzedzającego LED OFF.
+1. Po restarcie HA, przy obu przekaźnikach OFF, włącz ACTIVE i wykonaj ON bez wcześniejszego przełączania przycisków ani ręcznego `/get`. Sprawdź początkowy odczyt przekaźnika, potwierdzenie ON, oczekiwanie na kontroler oraz odczyt weryfikacyjny. Wykonaj co najmniej dwa pełne cykle każdego obwodu. Sprawdź rzeczywiste światło, niezależność kanałów, phase i confirmed. OFF ma odcinać przekaźnik bez poprzedzającego LED OFF.
 2. Wyłącz fizycznie przekaźnik podczas ON i podczas rozruchu. Integracja nie może go samoczynnie ponownie włączyć. Fizyczne ON musi rozpocząć nową epokę raportów.
 3. Wykonaj szybkie ON/OFF oraz zmiany jasności/CCT. Liczy się ostatni zamiar; nie może pojawić się seria starych komend.
 4. Jeśli wybrano zgodną grupę, sprawdź barierę gotowości i pojedynczy grupowy `/set`. Jeśli skład jest inny niż dwa LED-y, nie wykonuj tego kroku. Zapisz brak próby.
@@ -50,4 +50,4 @@ Rozszerzenie, Node 22+:
 node tests/z2m/report-extension.test.mjs
 ```
 
-Test nowego protokołu używa produkcyjnej klasyfikacji adaptera; wcześniejsze scenariusze MVP modelują zaufane źródło w harnessie. Wszystkie te testy pozostają syntetyczne.
+`tests/scenarios/test_cold_start.py` używa produkcyjnego adaptera, nonce i sekwencji raw readResponse, bez wstrzykniętego początkowego OFF. Obejmuje dwa cykle zasilania, brak spontanicznych raportów, późne potwierdzenia, przerwanie przez OFF i reconnect oraz pojedynczy set istniejącej grupy. Test nowego protokołu używa produkcyjnej klasyfikacji adaptera; wcześniejsze scenariusze MVP modelują zaufane źródło w harnessie. Wszystkie te testy pozostają syntetyczne.

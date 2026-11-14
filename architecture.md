@@ -114,3 +114,12 @@ Formularz umożliwia dwa obwody bez grupy; grupa jest opcjonalna i wymaga dokła
 Źródłem zaufania jest zainstalowane rozszerzenie i uprawnienia brokera. Nie dowodzi to emisji światła, obsługi innych klastrów, spontanicznych raportów urządzenia ani fizycznego odbioru pilotażu. Instrukcje publiczne znajdują się w INSTALLATION.md i TESTING.md; lokalna dokumentacja instalacji pozostaje ignorowana.
 
 Przy luce w sekwencji kanał dowodów jest blokowany do jawnego resync; utracone OFF nie może zostać ukryte przez następne ON. Zakończenie publikacji LED/grupy czyści agregat surowych atrybutów tych LED-ów. Reconciler utrzymuje ponadto znacznik publikacji (w locie = nieznany) i nie pomija korekty ani nie potwierdza celu na podstawie obserwacji sprzed nowszej wysyłki.
+
+
+## Ograniczone odczyty operacyjne (0.1.0b3)
+
+Przy `report_extension=true` runtime włącza PROBE w reconcilerze. Nowa intencja ON przy nieznanym stanie przekaźnika publikuje jeden `/get` jego skonfigurowanej właściwości i czeka na rzeczywistą odpowiedź. Następnie obowiązuje dotychczasowy odstęp OFF i potwierdzenie ON. Po boot grace, jeżeli brakuje dowodu gotowości LED-a, wykonywany jest jeden odczyt jego stanu; po LED_SET/GROUP_SET każdy członek otrzymuje indywidualny odczyt stanu i wymaganych parametrów. To nie jest polling ani retry `/set`.
+
+PROBE współdzieli zasób z komendami danego przekaźnika/LED-a, podlega tokenom, topologii, limiterowi i priorytetowi OFF. Zmiany suwaka współdzielą wysłany odczyt i pierwotny termin. Adapter pozwala na dokładne `/get` skonfigurowanych urządzeń z dozwolonymi pustymi polami; nie odczytuje grup i nie tworzy ich. Odczyt nie czyści agregatu dowodów; publikacja `/set` nadal wymaga nowych dowodów po jej zakończeniu. Wiarygodny późny raport może zakończyć UNCONFIRMED przez callback bez nowej komendy. Nowe jawne ON po błędzie odczytu odnawia generation; raport nie odnawia uprawnienia do sterowania.
+
+Scenariusze `test_cold_start.py` używają rzeczywistej klasy adaptera i sesji surowych readResponse, bez TrustingAdapter i bez początkowego raportu OFF. Starsze scenariusze pozostają testami modelu. Odbiór na rzeczywistej instalacji jest odrębną bramką. `diagnose.runtime_version` identyfikuje wykonywany kod po aktualizacji.

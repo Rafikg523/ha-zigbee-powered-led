@@ -42,7 +42,12 @@ class DesiredStateStore:
         return self._states[light_id]
 
     def apply(
-        self, light_ids: tuple[str, ...], patch: IntentPatch, *, source: str
+        self,
+        light_ids: tuple[str, ...],
+        patch: IntentPatch,
+        *,
+        source: str,
+        force: bool = False,
     ) -> dict[str, DesiredState]:
         """Atomically apply the patch to all requested configured lights."""
         if not isinstance(patch, IntentPatch):
@@ -69,7 +74,7 @@ class DesiredStateStore:
                     else patch.color_temp_kelvin
                 ),
             )
-            if candidate != state:
+            if candidate != state or force:
                 candidates[light_id] = candidate
 
         if candidates:

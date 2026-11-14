@@ -4,12 +4,18 @@ from tests.scenarios.harness import Rig, ScenarioClock, trusting_adapter_class
 
 
 @pytest.fixture
-async def rig(hass, mqtt_mock, enable_custom_integrations, monkeypatch, hass_storage):
+async def rig(
+    hass, mqtt_mock, enable_custom_integrations, monkeypatch, hass_storage, request
+):
     from custom_components.zigbee_led_orchestrator import mqtt_adapter, runtime
 
     clock = ScenarioClock(start=1000.0)
     adapters = []
-    adapter_class = trusting_adapter_class(mqtt_adapter.MqttAdapter)
+    adapter_class = (
+        mqtt_adapter.MqttAdapter
+        if getattr(request, "param", False)
+        else trusting_adapter_class(mqtt_adapter.MqttAdapter)
+    )
 
     def factory(hass_, config):
         adapter = adapter_class(hass_, config, now=clock.now)
