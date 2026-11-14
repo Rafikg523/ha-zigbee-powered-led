@@ -26,7 +26,7 @@
   },
   "options": {
     "step": {
-      "init": {
+      "choose": {
         "title": "Configure",
         "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration and returns it to observation mode.",
         "menu_options": {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — podpisy w menu konfiguracji
+
+- Zębatka otwiera menu z widocznymi pozycjami: Dodaj obwód, Utwórz grupę, Tryb sterowania. Napisy jadą w odpowiedzi kroku, więc pusta pamięć tłumaczeń nie zostawia samych strzałek.
+- To zwykłe wydanie, bez przyrostka beta. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.2`.
+
 ## 0.1.0b7 — obwody i grupy po instalacji
 
 - Instalacja łączy tylko z Zigbee2MQTT. Nie pyta o kontroler ani o grupę.

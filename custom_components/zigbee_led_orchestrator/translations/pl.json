@@ -26,7 +26,7 @@
   },
   "options": {
     "step": {
-      "init": {
+      "choose": {
         "title": "Konfiguracja",
         "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację i wraca do trybu obserwacji.",
         "menu_options": {
