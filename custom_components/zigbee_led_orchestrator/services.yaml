@@ -1,0 +1,32 @@
+pause:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: zigbee_led_orchestrator
+resume:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: zigbee_led_orchestrator
+resync:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: zigbee_led_orchestrator
+diagnose:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: zigbee_led_orchestrator
+    light_id:
+      required: false
+      selector:
+        text:

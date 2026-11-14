@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Zigbee2MQTT",
+        "description": "Read the existing catalog through Home Assistant MQTT. The report extension is optional for setup and required for active pilot testing. No device commands are sent.",
+        "data": {
+          "base_topic": "Zigbee2MQTT base topic",
+          "report_extension": "Use Zigbee2MQTT report extension (see installation guide)"
+        }
+      },
+      "mapping": {
+        "title": "Map two circuits",
+        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. The native group is optional and must contain exactly the two selected LEDs. Setup starts in observation mode.",
+        "data": {
+          "light_1": "LED controller 1 and endpoint",
+          "light_2": "LED controller 2 and endpoint",
+          "relay_1": "LED 1 power relay channel",
+          "relay_2": "LED 2 power relay channel",
+          "group": "Native group (optional; — means no group)",
+          "min_send_interval_ms": "Minimum send interval (ms)",
+          "publication_timeout_ms": "Publication timeout (ms)",
+          "boot_grace_ms": "Minimum boot grace (ms, requires calibration)",
+          "readiness_timeout_ms": "Readiness timeout (ms)"
+        }
+      }
+    },
+    "error": {
+      "invalid_mapping": "The configuration or physical mapping is invalid.",
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
+    },
+    "abort": {
+      "single_instance": "Only one Zigbee LED Orchestrator instance is supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Control mode",
+        "description": "Activate on site after verifying mapping, backup/rollback and disabling other writers for these circuits. Fresh reports from the Z2M extension are required. Restart always returns to observation mode.",
+        "data": {
+          "active": "Enable active control"
+        }
+      }
+    },
+    "error": {
+      "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change."
+    }
+  },
+  "services": {
+    "pause": {
+      "name": "Pause control",
+      "description": "Disable control and set every light's desired state to off without publishing.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume control",
+      "description": "Restore the mode that was active before the pause. Previous commands are not replayed.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "resync": {
+      "name": "Resync catalog",
+      "description": "Discard observations and re-read the Zigbee2MQTT catalog. Control must be enabled again afterwards.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        }
+      }
+    },
+    "diagnose": {
+      "name": "Diagnose",
+      "description": "Return redacted runtime diagnostics.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Zigbee LED Orchestrator entry."
+        },
+        "light_id": {
+          "name": "Light",
+          "description": "Limit to one light."
+        }
+      }
+    }
+  }
+}
