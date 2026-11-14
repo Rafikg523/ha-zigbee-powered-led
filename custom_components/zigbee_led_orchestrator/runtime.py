@@ -80,6 +80,7 @@ class Runtime:
         self._engine: Reconciler | None = None
         self._groups: GroupCoordinator | None = None
         self._stale = False
+        self._signature: tuple | None = None
         self._closed = False
         self._subscribers: set[Callable[[frozenset[str]], None]] = set()
         self._remove_topology = None
@@ -100,12 +101,65 @@ class Runtime:
 
     def _topology_changed(self, version: int) -> None:
         if self._engine is not None:
-            self._stale = True
-            self._engine.topology_changed(version)
-            self.adapter.set_active(False)
-            self.mode = ControlMode.OBSERVE
+            signature = self._control_signature()
+            if signature != self._signature:
+                self._stale = True
+                self._engine.topology_changed(version)
+                self.adapter.set_active(False)
+                self.mode = ControlMode.OBSERVE
+            elif self._stale:
+                # The mapped catalog matches the engine again. Stay in
+                # observation until the user explicitly enables control.
+                self._stale = False
         self._announce(frozenset(light.id for light in self.config.lights))
         self._schedule_provision()
+
+    def _control_signature(self) -> tuple:
+        """Identify command targets. Unrelated catalog noise is ignored."""
+        try:
+            validate_topology(self.config, self.adapter.topology, require_groups=False)
+        except KeyError, ValueError, TypeError:
+            return ("invalid",)
+        topology = self.adapter.topology
+        relays = tuple(
+            (
+                channel.id,
+                topology.resolve_device(channel.device_ieee).topic,
+                channel.endpoint,
+                topology.resolve_device(channel.device_ieee).endpoint_name(
+                    channel.endpoint
+                ),
+                channel.state_key,
+            )
+            for channel in self.config.relay_channels
+        )
+        lights = tuple(
+            (
+                light.id,
+                topology.resolve_device(light.device_ieee).topic,
+                light.endpoint,
+                topology.resolve_device(light.device_ieee).endpoint_name(
+                    light.endpoint
+                ),
+            )
+            for light in self.config.lights
+        )
+        groups = []
+        for group in self.config.groups:
+            found = topology.group_named(z2m_group_name(group.name))
+            if found is None:
+                groups.append((group.id, None))
+                continue
+            native_id, native = found
+            groups.append(
+                (
+                    group.id,
+                    native_id,
+                    native.topic,
+                    tuple(sorted(native.members)),
+                )
+            )
+        return (relays, lights, tuple(groups))
 
     def _observation(self, observation) -> None:
         delta = self._observations.ingest(observation)
@@ -215,10 +269,21 @@ class Runtime:
         if mode == ControlMode.ACTIVE:
             if self._stale:
                 raise RuntimeError("topology changed; reload required")
-            if self._engine is None:
-                self._engine = self._make_engine()
-            self.adapter.set_active(True)
-            self._engine.set_enabled(True)
+            created = self._engine is None
+            engine = self._make_engine() if created else self._engine
+            assert engine is not None
+            try:
+                self.adapter.set_active(True)
+                engine.set_enabled(True)
+            except Exception:
+                self.adapter.set_active(False)
+                if created:
+                    engine.set_enabled(False)
+                    self._groups = None
+                raise
+            if created:
+                self._signature = self._control_signature()
+                self._engine = engine
         else:
             if self._engine is not None:
                 self._engine.set_enabled(False)
@@ -353,6 +418,7 @@ class Runtime:
             await self._engine.close()
             self._engine = None
         self._stale = False
+        self._signature = None
         self._observations.invalidate_bridge()
         self._announce(frozenset(light.id for light in self.config.lights))
         self._options_ready.clear()

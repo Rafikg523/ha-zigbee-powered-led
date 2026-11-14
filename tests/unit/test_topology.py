@@ -117,6 +117,33 @@ def test_group_name_reuse_for_another_group_is_rejected():
         topology.resolve_group(1)
 
 
+def test_device_refresh_keeps_only_groups_that_still_resolve():
+    topology = Topology("zigbee2mqtt")
+    entry = device()
+    entry["endpoints"] = {"1": {}}
+    topology.update_devices([entry])
+    topology.update_groups(
+        [
+            {
+                "id": 1,
+                "friendly_name": "group",
+                "members": [{"ieee_address": entry["ieee_address"], "endpoint": 1}],
+            }
+        ]
+    )
+    topology.update_devices([entry])
+    assert topology.groups_seen
+    assert topology.resolve_group(1).members == frozenset({(entry["ieee_address"], 1)})
+    entry["endpoints"] = {"2": {}}
+    topology.update_devices([entry])
+    with pytest.raises(KeyError):
+        topology.resolve_group(1)
+    with pytest.raises(ValueError):
+        topology.update_devices([device(), device("0x00124b0000000002")])
+    with pytest.raises(KeyError):
+        topology.resolve_device(entry["ieee_address"])
+
+
 def test_endpoint_name_is_retained_from_device_catalog():
     entry = device()
     entry["endpoints"] = {"1": {"name": "left"}, "2": {"name": "right"}}

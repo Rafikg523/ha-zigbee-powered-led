@@ -46,6 +46,11 @@ class Topology:
 
     def update_devices(self, entries: object) -> None:
         self.version += 1
+        # Parsing replaces the device table. Hold the previous groups until the
+        # new table is valid so an identical republish does not look like a
+        # membership change. A failed parse still leaves both tables empty.
+        previous_groups = self._groups
+        previous_seen = self.groups_seen
         self._devices = {}
         self._groups = {}
         self.groups_seen = False
@@ -119,6 +124,17 @@ class Topology:
         self._name_owners.update(
             {d.topic[len(self._base_topic) + 1 :]: d.ieee for d in devices.values()}
         )
+        restored = {
+            group_id: group
+            for group_id, group in previous_groups.items()
+            if all(
+                ieee in devices and endpoint in devices[ieee].endpoints
+                for ieee, endpoint in group.members
+            )
+        }
+        if restored:
+            self._groups = restored
+            self.groups_seen = previous_seen
 
     def devices(self) -> tuple[Device, ...]:
         return tuple(self._devices.values())

@@ -62,6 +62,11 @@
     },
     "error": {
       "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
+      "topology_stale": "Katalog Zigbee2MQTT zmienił się dla tych obwodów. Użyj resync, a potem włącz sterowanie ponownie. Poprzednie ON nie jest odtwarzane.",
+      "mapping_mismatch": "Zapisane mapowanie nie zgadza się z katalogiem Zigbee2MQTT. Sprawdź urządzenia, endpointy i kanały przekaźników.",
+      "runtime_not_running": "Integracja nie jest uruchomiona. Uruchom ponownie Home Assistant i spróbuj jeszcze raz.",
+      "bridge_unavailable": "Połączenie MQTT albo mostek Zigbee2MQTT jest offline. Sterowanie pozostaje wyłączone, dopóki mostek nie będzie online.",
+      "report_extension_unavailable": "Rozszerzenie raportów Zigbee2MQTT nie jest gotowe. Sprawdź report_extension_ready w diagnostyce i użyj resync po załadowaniu rozszerzenia.",
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
       "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
       "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",

@@ -63,12 +63,36 @@ async def test_topology_change_revokes_active_authority(runtime):
     instance.set_mode(ControlMode.ACTIVE)
     assert adapter.active
     instance.submit(("light_a",), IntentPatch(on=True), source="ui")
-    adapter.topology_callback(adapter.topology.version + 1)
+    adapter.topology.update_groups(
+        [
+            {
+                "id": 1,
+                "friendly_name": "group_a_orchestrator",
+                "members": [{"ieee_address": "0x0000000000000002", "endpoint": 1}],
+            }
+        ]
+    )
+    adapter.topology_callback(adapter.topology.version)
     assert not adapter.active
     assert instance.mode == ControlMode.OBSERVE
     assert not instance.snapshot("light_a").desired.on
+    with pytest.raises(RuntimeError, match="topology changed"):
+        instance.set_mode(ControlMode.ACTIVE)
     with pytest.raises(RuntimeError):
         instance.submit(("light_a",), IntentPatch(on=True), source="ui")
+
+
+async def test_identical_catalog_callback_keeps_authority_without_replay(runtime):
+    instance, adapter = runtime
+    instance.set_mode(ControlMode.ACTIVE)
+    instance.submit(("light_a",), IntentPatch(on=True), source="ui")
+    sent = list(adapter.sent)
+    adapter.topology_callback(adapter.topology.version)
+    assert adapter.active
+    assert instance.mode == ControlMode.ACTIVE
+    assert instance.snapshot("light_a").desired.on
+    assert adapter.sent == sent
+    assert instance.diagnostics()["topology_stale"] is False
 
 
 async def test_bridge_offline_revokes_mode_and_does_not_resume(runtime):
