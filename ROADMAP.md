@@ -4,7 +4,7 @@
 
 - [x] Testowalny rdzeń, ostatnia intencja, priorytet OFF i arbiter publikacji.
 - [x] Adapter przez MQTT Home Assistanta, katalog Z2M, konfiguracja przez UI i lifecycle.
-- [x] Dwa obwody, opcjonalna dokładnie zweryfikowana grupa i bariera gotowości.
+- [x] Obwody dodawane po jednej parze, opcjonalna dokładnie zweryfikowana grupa i bariera gotowości.
 - [x] Encje light, diagnostyka, preferencje i usługi serwisowe.
 - [x] Testy jednostkowe, HA i scenariusze na atrapach MQTT.
 - [x] Instrukcja instalacji, konfiguracja bez grupy i opcjonalny kanał rzeczywistych raportów ZCL.

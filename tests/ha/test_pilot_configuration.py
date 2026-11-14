@@ -8,10 +8,9 @@ from tests.unit.test_topology_config import topology
 
 def selections(**changes):
     return {
-        "light_1": "0x0000000000000002|1",
-        "light_2": "0x0000000000000003|1",
-        "relay_1": "0x0000000000000001|1|state_l1",
-        "relay_2": "0x0000000000000001|2|state_l2",
+        "name": "Kuchnia",
+        "light": "0x0000000000000002|1",
+        "relay": "0x0000000000000001|1|state_l1",
         "group_name": "",
         "min_send_interval_ms": 100,
         "publication_timeout_ms": 3000,
@@ -41,10 +40,11 @@ async def flow(hass, monkeypatch):
     return instance
 
 
-async def test_configure_two_lights_without_group_and_infer_temperature(flow):
+async def test_configure_one_light_and_infer_temperature(flow):
     result = await flow.async_step_mapping(selections())
     assert result["type"] == "create_entry"
     assert result["data"]["groups"] == []
+    assert result["data"]["lights"][0]["name"] == "Kuchnia"
     assert result["data"]["lights"][0]["min_kelvin"] == 2000
     assert result["data"]["lights"][0]["max_kelvin"] == 6536
 
@@ -52,7 +52,7 @@ async def test_configure_two_lights_without_group_and_infer_temperature(flow):
 async def test_mapping_only_offers_light_endpoints(flow):
     form = await flow.async_step_mapping()
     schema = form["data_schema"].schema
-    selector = next(value for key, value in schema.items() if str(key) == "light_1")
+    selector = next(value for key, value in schema.items() if str(key) == "light")
     assert "0x0000000000000001|1" not in selector.container
     assert "0x0000000000000002|1" in selector.container
 
@@ -66,6 +66,10 @@ async def test_options_remain_accessible_before_entry_is_loaded(hass):
     entry = MockConfigEntry(domain=DOMAIN, data=valid_config())
     entry.add_to_hass(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "control"}
+    )
     assert result["type"] == "form"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], user_input={"active": True}

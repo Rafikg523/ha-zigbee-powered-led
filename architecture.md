@@ -15,7 +15,7 @@ Stan opisany przy aktualizacji dokumentu: **P00–P13 zakończone w zakresie syn
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
 | `models.py`, `const.py`, `protocols.py` | Typy stanu, kontrakty zegara i transportu | Istnieją |
-| `configuration.py` | Walidacja modelu konfiguracji bez zależności od HA | Istnieje; UI dla dwóch obwodów i opcjonalnej grupy |
+| `configuration.py` | Walidacja modelu konfiguracji bez zależności od HA | Istnieje; UI dodaje obwody po jednej parze i opcjonalną grupę |
 | `desired_store.py` | Aktualna intencja, atomowe aktualizacje i numer `generation` | Istnieje |
 | `observation_store.py` | Raporty przekaźnika/LED/mostka, jakość danych, `power_epoch` i `bridge_epoch` | Istnieje |
 | `command_arbiter.py` | Aktualność poleceń, priorytet OFF, ograniczanie i koordynacja wysyłek, kwarantanna niepewnej publikacji | Istnieje; integracja z rzeczywistym HA MQTT jest do sprawdzenia |
@@ -109,7 +109,7 @@ Adapter klasyfikuje zwykłe raporty Z2M jako dane cache lub o nieznanym źródle
 
 ## Wersja testowa do instalacji (2026-11-14)
 
-Formularz umożliwia dwa obwody bez grupy; grupa jest opcjonalna i wymaga dokładnego składu wybranych endpointów LED. Zakres CCT jest odczytywany z katalogu. Do aktywnych prób służy opcjonalny `report_extension`, domyślnie false; stare wpisy zachowują schemat 1 i konserwatywną klasyfikację zwykłych stanów.
+Od 0.1.0b6 formularz zapisuje jedną parę: nazwę wirtualnej encji, kontroler i kanał. Kolejne pary dopisuje **Konfiguruj → Dodaj obwód**. Grupa jest opcjonalna. Podana nazwa, na przykład Salon, tworzy `Salon_orchestrator`, a każdy później dodany obwód dołącza do jej składu. Komenda grupowa wymaga dokładnego składu wybranych endpointów LED. Zakres CCT jest odczytywany z katalogu. Do aktywnych prób służy opcjonalny `report_extension`, domyślnie false; stare wpisy zachowują schemat 1 i konserwatywną klasyfikację zwykłych stanów. Brak pola `name` daje podpis z identyfikatora.
 
 `z2m/orchestrator-reports.mjs` używa eventBus Zigbee2MQTT 2.14.3 do przekazywania wyłącznie surowych attributeReport/readResponse dla genOnOff, genLevelCtrl i lightingColorCtrl. Nie wykonuje komend ani odczytów Zigbee. HA przez swój klient MQTT przesyła metadane sesji na `<base>/orchestrator/subscribe`; extension zwraca potwierdzenie i raporty na `<base>/orchestrator/report`, bez retain. `device_reports.py` sprawdza nonce sesji, sekwencję, dokładny IEEE/endpoint i typy atrybutów; agreguje tylko atrybuty odebrane w bieżącej epoce potwierdzonego zasilania. Po zmianie zasilania/reconnect/resync cache dowodów jest czyszczony. W tym trybie zwykłe scalone MQTT nie nadpisuje dowodów. Publikacje metadanych w OBSERVE nie są operacyjnym `/set` ani `/get`.
 

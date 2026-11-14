@@ -151,3 +151,28 @@ class TestConfiguration(unittest.TestCase):
         config["policies"]["slider_coalesce_ms"] = 0
         result = self.validate(config)
         self.assertEqual(result.policies.slider_coalesce_ms, 0)
+
+    def test_missing_name_uses_identifier_label(self):
+        result = self.validate(valid_config())
+        self.assertEqual(result.lights[0].name, "Light A")
+        self.assertEqual(result.lights[1].name, "Light B")
+
+    def test_explicit_name_is_kept(self):
+        config = valid_config()
+        config["lights"][0]["name"] = "Kuchnia"
+        self.assertEqual(self.validate(config).lights[0].name, "Kuchnia")
+
+    def test_blank_name_rejected(self):
+        for value in ("", "  ", " Kuchnia"):
+            with self.subTest(value=value):
+                config = valid_config()
+                config["lights"][0]["name"] = value
+                with self.assertRaisesRegex(ValueError, "name"):
+                    self.validate(config)
+
+    def test_duplicate_name_rejected(self):
+        config = valid_config()
+        config["lights"][0]["name"] = "Kuchnia"
+        config["lights"][1]["name"] = "Kuchnia"
+        with self.assertRaisesRegex(ValueError, "lights.name"):
+            self.validate(config)

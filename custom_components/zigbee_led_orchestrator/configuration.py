@@ -82,6 +82,17 @@ def _unique(values: list[object], path: str) -> None:
         raise ValueError(f"{path} contains a duplicate")
 
 
+def circuit_label(light_id: str, name: object = None, *, path: str = "name") -> str:
+    """Return the virtual entity label, or the historical title of its id."""
+    if name is None:
+        return light_id.replace("_", " ").title()
+    if not isinstance(name, str) or not name or name.strip() != name:
+        raise ValueError(
+            f"{path} must be a nonempty string without surrounding whitespace"
+        )
+    return name
+
+
 def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
     """Build a fully validated immutable configuration, or raise ValueError."""
     root = _mapping(
@@ -138,6 +149,7 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
             path,
             {
                 "id",
+                "name",
                 "device_ieee",
                 "endpoint",
                 "power_channel",
@@ -152,9 +164,10 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
         maximum = _integer(item.get("max_kelvin"), path + ".max_kelvin")
         if minimum > maximum:
             raise ValueError(f"{path}.min_kelvin exceeds max_kelvin")
+        light_id = _id(item.get("id"), path + ".id")
         lights.append(
             LightConfig(
-                id=_id(item.get("id"), path + ".id"),
+                id=light_id,
                 device_ieee=_ieee(item.get("device_ieee"), path + ".device_ieee"),
                 endpoint=_integer(
                     item.get("endpoint"), path + ".endpoint", maximum=240
@@ -162,9 +175,11 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
                 power_channel=channel,
                 min_kelvin=minimum,
                 max_kelvin=maximum,
+                name=circuit_label(light_id, item.get("name"), path=path + ".name"),
             )
         )
     _unique([light.id for light in lights], "lights.id")
+    _unique([light.name for light in lights], "lights.name")
     _unique(
         [(light.device_ieee, light.endpoint) for light in lights],
         "lights.device_ieee/endpoint",

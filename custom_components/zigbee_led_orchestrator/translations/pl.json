@@ -10,13 +10,12 @@
         }
       },
       "mapping": {
-        "title": "Przypisz dwa obwody",
-        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Pusta nazwa oznacza sterowanie pojedyncze. Podana nazwa, na przykład Salon, tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Integracja utrzymuje tylko tę grupę. Po instalacji uruchamia się w trybie obserwacji.",
+        "title": "Przypisz jeden obwód",
+        "description": "Nazwij wirtualną encję, potem wybierz jeden kontroler LED i jego kanał zasilania. Pusta nazwa grupy oznacza sterowanie osobne. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Każdy później dodany obwód dołącza do tej grupy. Czasy są wspólne. Po instalacji integracja jest w trybie obserwacji.",
         "data": {
-          "light_1": "Kontroler LED 1 i endpoint",
-          "light_2": "Kontroler LED 2 i endpoint",
-          "relay_1": "Kanał zasilania LED 1",
-          "relay_2": "Kanał zasilania LED 2",
+          "name": "Nazwa wirtualnej encji",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał zasilania",
           "group_name": "Nazwa grupy (puste = bez grupy)",
           "min_send_interval_ms": "Minimalny odstęp wysyłek (ms)",
           "publication_timeout_ms": "Limit czasu publikacji (ms)",
@@ -27,24 +26,51 @@
     },
     "error": {
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
+      "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
+      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
     },
     "abort": {
-      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator."
+      "single_instance": "Obsługiwana jest tylko jedna instancja Zigbee LED Orchestrator. Kolejny obwód dodasz w Konfiguruj przy istniejącym wpisie."
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Zigbee LED Orchestrator",
+        "description": "Zmień tryb sterowania albo dodaj kolejną parę włącznika i kontrolera. Dodanie obwodu przeładowuje integrację i wraca do trybu obserwacji. Nowy obwód dołącza do grupy, jeśli jej nazwa została podana przy pierwszej konfiguracji.",
+        "menu_options": {
+          "control": "Tryb sterowania",
+          "add_circuit": "Dodaj obwód"
+        }
+      },
+      "control": {
         "title": "Tryb sterowania",
         "description": "Aktywuj dopiero na miejscu po potwierdzeniu mapowania, kopii i rollbacku oraz wyłączeniu innych ścieżek sterowania tymi obwodami. Potrzebne są świeże raporty urządzeń z rozszerzenia Z2M. Po restarcie integracja ponownie uruchomi się w trybie obserwacji.",
         "data": {
           "active": "Włącz aktywne sterowanie"
         }
+      },
+      "add_circuit": {
+        "title": "Dodaj obwód",
+        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Czasy pozostają bez zmian. Zapis przeładowuje integrację i wraca do trybu obserwacji. Nowy obwód dołącza do istniejącej grupy, jeśli została skonfigurowana.",
+        "data": {
+          "name": "Nazwa wirtualnej encji",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał zasilania"
+        }
       }
     },
     "error": {
-      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync."
+      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
+      "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
+      "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
+      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
+    },
+    "abort": {
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane."
     }
   },
   "services": {

@@ -93,7 +93,28 @@ def test_entity_exposes_capability_limits(light):
 
 def test_rename_keeps_unique_id(light):
     entity, _ = light
+    assert entity.name == "Light A"
     assert entity.unique_id == "entry-123_light_a"
+
+
+def test_configured_name_is_the_virtual_entity_name():
+    from custom_components.zigbee_led_orchestrator.light import OrchestratorLight
+    from custom_components.zigbee_led_orchestrator.sensor import PhaseSensor
+
+    runtime = RuntimeStub()
+    runtime.config = type(
+        "Config",
+        (),
+        {"lights": [type("Light", (), {"id": "light_1", "name": "Kuchnia"})()]},
+    )()
+    entity = OrchestratorLight(
+        runtime, "entry-123", "light_1", 2000, 6500, name="Kuchnia"
+    )
+    sensor = PhaseSensor(runtime, "entry-123", "light_1")
+    assert entity.name == "Kuchnia"
+    assert entity.unique_id == "entry-123_light_1"
+    assert sensor.name == "Kuchnia phase"
+    assert sensor.unique_id == "entry-123_light_1_phase"
 
 
 async def test_turn_on_clamps_color_temperature_to_limits(light):
@@ -165,6 +186,7 @@ async def test_platform_creates_entities_for_configured_lights_and_group():
         "entry-123_light_b",
         "entry-123_group_a",
     }
+    assert {entity.name for entity in entities} >= {"Light A", "Light B"}
 
 
 async def test_capabilities_follow_verified_runtime_metadata(light, monkeypatch):

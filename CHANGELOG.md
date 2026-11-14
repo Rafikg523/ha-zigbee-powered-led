@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0b6 — obwody po jednej parze
+
+- Pierwszy formularz zapisuje jedną parę: nazwę wirtualnej encji, kontroler LED i kanał przekaźnika. Kolejne pary dopisuje się w **Konfiguruj → Dodaj obwód**, bez drugiej instancji integracji.
+- Nazwa grupy zostaje opcjonalna. Puste pole zostawia sterowanie indywidualne. Nazwa `Salon` tworzy grupę i encję `Salon_orchestrator`. Każdy później dodany obwód dołącza do tej grupy.
+- Zapis nowego obwodu przeładowuje wpis i wraca do OBSERVE. ACTIVE trzeba włączyć ponownie. Zajęta nazwa, kontroler albo kanał są odrzucane.
+- Stary wpis bez pola `name` nadal się ładuje; encja dostaje podpis z identyfikatora, na przykład `light_1` → `Light 1`.
+- Po aktualizacji uruchom ponownie cały Home Assistant. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.0b6`.
+
 ## 0.1.0b5 — własne grupy Zigbee2MQTT
 
 - W mapowaniu jest opcjonalna nazwa grupy. Puste pole zostawia sterowanie indywidualne. Nazwa `Salon` tworzy encję światła i grupę Zigbee2MQTT `Salon_orchestrator`.
