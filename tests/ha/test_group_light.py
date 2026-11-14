@@ -207,7 +207,16 @@ async def test_runtime_topology_change_revokes_group_control(runtime):
     instance, adapter = runtime
     instance.set_mode(ControlMode.ACTIVE)
     instance.submit_group("group_a", IntentPatch(on=True), source="ui")
-    adapter.topology_callback(adapter.topology.version + 1)
+    adapter.topology.update_groups(
+        [
+            {
+                "id": 1,
+                "friendly_name": "group_a_orchestrator",
+                "members": [{"ieee_address": "0x0000000000000002", "endpoint": 1}],
+            }
+        ]
+    )
+    adapter.topology_callback(adapter.topology.version)
     assert not instance.group_snapshot("group_a").on
     with pytest.raises(RuntimeError):
         instance.submit_group("group_a", IntentPatch(on=True), source="ui")

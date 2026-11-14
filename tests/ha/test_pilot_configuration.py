@@ -102,7 +102,7 @@ async def test_options_remain_accessible_before_entry_is_loaded(hass):
         result["flow_id"], user_input={"active": True}
     )
     assert result["type"] == "form"
-    assert result["errors"]["base"] == "control_unavailable"
+    assert result["errors"]["base"] == "runtime_not_running"
 
 
 async def test_setup_accepts_explicit_pilot_timing(flow):

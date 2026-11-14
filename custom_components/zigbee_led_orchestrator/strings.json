@@ -62,6 +62,11 @@
     },
     "error": {
       "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change.",
+      "topology_stale": "The Zigbee2MQTT catalog changed for these circuits. Run resync, then enable control again. Previous ON commands are not replayed.",
+      "mapping_mismatch": "The saved mapping does not match the Zigbee2MQTT catalog. Check devices, endpoints and relay channels.",
+      "runtime_not_running": "The integration is not running. Restart Home Assistant, then try again.",
+      "bridge_unavailable": "The MQTT connection or Zigbee2MQTT bridge is offline. Control stays off until the bridge is online.",
+      "report_extension_unavailable": "The Zigbee2MQTT report extension is not ready. Check report_extension_ready in diagnostics and run resync after loading the extension.",
       "invalid_mapping": "The configuration or physical mapping is invalid.",
       "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
       "invalid_group_name": "The group name is empty, too long, or contains characters Zigbee2MQTT cannot use.",

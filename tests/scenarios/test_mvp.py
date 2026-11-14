@@ -329,7 +329,7 @@ async def test_t14_group_membership_change_stops_risky_operations(ready):
     await command_is_inert(rig, "turn_on", "light_a")
     result = await rig.enable_active()
     assert result["type"] == "form"
-    assert result["errors"] == {"base": "control_unavailable"}
+    assert result["errors"] == {"base": "topology_stale"}
     await rig.advance(30)
     assert len(rig.publications()) == before
     assert GROUP_SET not in topics(rig)

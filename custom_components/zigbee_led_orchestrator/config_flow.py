@@ -40,6 +40,24 @@ _MENU_LABELS = {
 }
 
 
+def control_error(exc: Exception) -> str:
+    """Map a refused activation to a specific options-flow error."""
+    if isinstance(exc, AttributeError):
+        return "runtime_not_running"
+    if isinstance(exc, ValueError):
+        return "mapping_mismatch"
+    if isinstance(exc, RuntimeError):
+        text = str(exc)
+        if text.startswith("topology changed"):
+            return "topology_stale"
+        if text.startswith("report extension"):
+            return "report_extension_unavailable"
+        if text.startswith("invalid") or "closed" in text:
+            return "runtime_not_running"
+        return "bridge_unavailable"
+    return "control_unavailable"
+
+
 def menu_options_for(language: str) -> dict[str, str]:
     """Return menu labels in the flow result.
 
@@ -390,8 +408,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                 self.config_entry.runtime_data.set_mode(
                     ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE
                 )
-            except RuntimeError, ValueError, AttributeError:
-                errors["base"] = "control_unavailable"
+            except (RuntimeError, ValueError, AttributeError) as exc:
+                errors["base"] = control_error(exc)
             else:
                 return self.async_create_entry(data={"active": user_input["active"]})
         return self.async_show_form(

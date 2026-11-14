@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3 — włączenie sterowania po odświeżeniu katalogu
+
+- Ponowne wysłanie katalogu urządzeń przez Zigbee2MQTT (anons, interview, zmiana adresu sieciowego) traktowało niezmienione obwody jak nową topologię. Jeśli silnik już istniał, kolejna próba ACTIVE kończyła się ogólnym komunikatem i sterowanie zostawało wyłączone.
+- Identyczny katalog nie odbiera uprawnień i nie odtwarza starego ON. Rzeczywista zmiana składu albo brak urządzenia nadal wymaga resync i nie włącza ACTIVE.
+- Nieudane włączenie, na przykład przy offline mostka albo niegotowym rozszerzeniu raportów, nie zostawia silnika. Następne odświeżenie katalogu nie blokuje sterowania na stałe.
+- Formularz trybu podaje konkretną przyczynę: zmieniona topologia, niezgodne mapowanie, integracja nieuruchomiona, mostek offline albo niegotowe rozszerzenie raportów.
+- To zwykłe wydanie, bez przyrostka. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.1.3`. Potem włącz ACTIVE jeszcze raz.
+
 ## 0.1.2 — podpisy w menu konfiguracji
 
 - Zębatka otwiera menu z widocznymi pozycjami: Dodaj obwód, Utwórz grupę, Tryb sterowania. Napisy jadą w odpowiedzi kroku, więc pusta pamięć tłumaczeń nie zostawia samych strzałek.
