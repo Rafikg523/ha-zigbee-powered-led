@@ -12,6 +12,7 @@ from homeassistant.components.light import (
 )
 from homeassistant.exceptions import HomeAssistantError
 
+from .group_provisioner import z2m_group_name
 from .models import IntentPatch
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             group.members,
             max(lights[item].min_kelvin for item in group.members),
             min(lights[item].max_kelvin for item in group.members),
+            name=z2m_group_name(group.name),
         )
         for group in runtime.config.groups
     )
@@ -185,12 +187,14 @@ class OrchestratorGroupLight(LightEntity):
         members: tuple[str, ...],
         min_kelvin: int,
         max_kelvin: int,
+        *,
+        name: str | None = None,
     ) -> None:
         self._runtime = runtime
         self._group_id = group_id
         self._members = members
         self._attr_unique_id = f"{entry_id}_{group_id}"
-        self._attr_name = group_id
+        self._attr_name = name or group_id
         self._supports_brightness = False
         self._supports_color_temp = False
         self._config_min_kelvin = min_kelvin

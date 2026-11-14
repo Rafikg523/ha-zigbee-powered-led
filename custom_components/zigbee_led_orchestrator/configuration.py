@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import fields
 
+from .group_provisioner import normalize_group_name, z2m_group_name
 from .models import (
     GroupConfig,
     LightConfig,
@@ -175,7 +176,7 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
     grouped: set[str] = set()
     for index, item in enumerate(_sequence(root.get("groups", []), "groups")):
         path = f"groups[{index}]"
-        item = _mapping(item, path, {"id", "z2m_id", "members"})
+        item = _mapping(item, path, {"id", "z2m_id", "members", "name"})
         members = [
             _id(m, path + ".members")
             for m in _sequence(item.get("members"), path + ".members")
@@ -186,15 +187,30 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
         if grouped.intersection(members):
             raise ValueError(f"{path}.members overlap another group")
         grouped.update(members)
+        group_id = _id(item.get("id"), path + ".id")
+        raw_z2m_id = item.get("z2m_id")
+        try:
+            name = normalize_group_name(item.get("name", group_id))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{path}.name is invalid") from exc
         groups.append(
             GroupConfig(
-                id=_id(item.get("id"), path + ".id"),
-                z2m_id=_integer(item.get("z2m_id"), path + ".z2m_id", maximum=65535),
+                id=group_id,
+                z2m_id=(
+                    None
+                    if raw_z2m_id is None
+                    else _integer(raw_z2m_id, path + ".z2m_id", maximum=65535)
+                ),
                 members=tuple(members),
+                name=name,
             )
         )
     _unique([group.id for group in groups], "groups.id")
-    _unique([group.z2m_id for group in groups], "groups.z2m_id")
+    _unique(
+        [group.z2m_id for group in groups if group.z2m_id is not None],
+        "groups.z2m_id",
+    )
+    _unique([z2m_group_name(group.name) for group in groups], "groups.name")
     group_ids = {group.id for group in groups}
 
     rooms = []

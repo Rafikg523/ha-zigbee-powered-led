@@ -68,12 +68,20 @@ class GroupCoordinator:
     OFF or any new member intent invalidates the operation immediately.
     """
 
-    def __init__(self, engine: Reconciler, clock: Clock, *, barrier_ms: int) -> None:
+    def __init__(
+        self,
+        engine: Reconciler,
+        clock: Clock,
+        *,
+        barrier_ms: int,
+        members: dict[str, tuple[str, ...]] | None = None,
+    ) -> None:
         if type(barrier_ms) is not int or barrier_ms <= 0:
             raise ValueError("barrier_ms must be a positive integer")
         self._engine = engine
         self._clock = clock
         self._barrier = barrier_ms / 1000
+        self._members = dict(members or {})
         self._operations: set[_Operation] = set()
         self._sequence = count()
         self._closed = False
@@ -88,7 +96,11 @@ class GroupCoordinator:
     ) -> dict[str, DesiredState]:
         if self._closed:
             raise RuntimeError("group coordinator closed")
-        group = self._engine.groups[group_id]
+        group = self._engine.groups.get(group_id)
+        if group is None:
+            # Desired state still updates. Without an exact native group the
+            # members are commanded individually, never through a foreign group.
+            return self._engine.submit(self._members[group_id], patch, source=source)
         members = group.members
         all_on = patch.on is True or (
             patch.on is None

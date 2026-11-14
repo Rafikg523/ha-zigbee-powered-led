@@ -166,14 +166,21 @@ async def test_group_publish_requires_exact_configured_members(adapter, mqtt_api
     instance.set_active(True)
     group = {
         "id": 1,
-        "friendly_name": "room/group",
+        "friendly_name": "group_a_orchestrator",
         "members": [
             {"ieee_address": "0x0000000000000002", "endpoint": 1},
             {"ieee_address": "0x0000000000000003", "endpoint": 1},
         ],
     }
-    await message(callbacks, "zigbee2mqtt/bridge/groups", [group])
-    await instance.publish("zigbee2mqtt/room/group/set", {"state": "OFF"})
+    foreign = {
+        "id": 2,
+        "friendly_name": "room/group",
+        "members": list(group["members"]),
+    }
+    await message(callbacks, "zigbee2mqtt/bridge/groups", [group, foreign])
+    await instance.publish("zigbee2mqtt/group_a_orchestrator/set", {"state": "OFF"})
+    with pytest.raises(RuntimeError):
+        await instance.publish("zigbee2mqtt/room/group/set", {"state": "OFF"})
     group["members"].pop()
     await message(callbacks, "zigbee2mqtt/bridge/groups", [group])
     with pytest.raises(RuntimeError):
@@ -359,7 +366,7 @@ async def test_initial_retained_group_before_devices_can_be_validated(
     callbacks, _, _ = mqtt_api
     group = {
         "id": 1,
-        "friendly_name": "room/group",
+        "friendly_name": "group_a_orchestrator",
         "members": [
             {"ieee_address": "0x0000000000000002", "endpoint": 1},
             {"ieee_address": "0x0000000000000003", "endpoint": 1},
@@ -382,7 +389,7 @@ async def test_initial_retained_group_before_devices_can_be_validated(
     )
     await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
     instance.set_active(True)
-    await instance.publish("zigbee2mqtt/room/group/set", {"state": "OFF"})
+    await instance.publish("zigbee2mqtt/group_a_orchestrator/set", {"state": "OFF"})
 
 
 async def test_led_color_temperature_mireds_converted_to_kelvin(adapter, mqtt_api):
@@ -470,3 +477,64 @@ async def test_resync_revokes_control_and_rereads_catalog_without_publishing(
     mqtt.async_publish.assert_not_called()
     await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
     instance.set_active(True)
+
+
+async def test_bridge_request_works_while_control_is_inactive(adapter, mqtt_api, hass):
+    import asyncio
+
+    instance, observations = adapter
+    callbacks, _, _ = mqtt_api
+    await message(callbacks, "zigbee2mqtt/bridge/devices", devices())
+    await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
+    pending = asyncio.create_task(
+        instance.request_bridge(
+            "group/options",
+            {
+                "id": "group_a_orchestrator",
+                "options": {"optimistic": False, "retain": False},
+            },
+        )
+    )
+    await asyncio.sleep(0)
+    topic, payload = mqtt.async_publish.await_args.args[1:3]
+    assert topic == "zigbee2mqtt/bridge/request/group/options"
+    assert mqtt.async_publish.await_args.kwargs["retain"] is False
+    body = json.loads(payload)
+    assert body["options"] == {"optimistic": False, "retain": False}
+    assert "transaction" in body
+    with pytest.raises(ValueError):
+        await instance.request_bridge("group/members/remove_all", {"device": "led"})
+    response = callbacks["zigbee2mqtt/bridge/response/group/#"](
+        SimpleNamespace(
+            topic="zigbee2mqtt/bridge/response/group/options",
+            payload=json.dumps(
+                {
+                    "status": "ok",
+                    "transaction": body["transaction"],
+                    "data": {"to": {"optimistic": False, "retain": False}},
+                }
+            ),
+            retain=False,
+        )
+    )
+    if response is not None:
+        await response
+    assert (await pending)["status"] == "ok"
+    assert not any(getattr(item, "light_id", None) for item in observations)
+
+
+async def test_orchestrator_group_state_is_not_an_observation(adapter, mqtt_api):
+    _, observations = adapter
+    callbacks, _, _ = mqtt_api
+    await message(callbacks, "zigbee2mqtt/bridge/devices", devices())
+    before = len(observations)
+    result = callbacks["zigbee2mqtt/room/led"](
+        SimpleNamespace(
+            topic="zigbee2mqtt/group_a_orchestrator",
+            payload='{"state":"ON","brightness":20}',
+            retain=True,
+        )
+    )
+    if result is not None:
+        await result
+    assert len(observations) == before

@@ -4,6 +4,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from .group_provisioner import z2m_group_name
+
 
 @dataclass(frozen=True, slots=True)
 class Device:
@@ -12,6 +14,7 @@ class Device:
     endpoints: frozenset[int]
     _capabilities_json: str
     _endpoint_names: tuple[tuple[int, str | None], ...]
+    name: str
 
     def endpoint_name(self, endpoint: int) -> str | None:
         return dict(self._endpoint_names)[endpoint]
@@ -26,6 +29,7 @@ class Device:
 class Group:
     topic: str
     members: frozenset[tuple[str, int]]
+    name: str
 
 
 class Topology:
@@ -35,6 +39,7 @@ class Topology:
         self._base_topic = base_topic
         self._devices: dict[str, Device] = {}
         self._groups: dict[int, Group] = {}
+        self.groups_seen = False
         self._name_owners: dict[str, str] = {}
         self._group_name_owners: dict[str, int] = {}
         self.version = 0
@@ -43,6 +48,7 @@ class Topology:
         self.version += 1
         self._devices = {}
         self._groups = {}
+        self.groups_seen = False
         if not isinstance(entries, list):
             raise TypeError("devices must be a list")
         devices: dict[str, Device] = {}
@@ -107,6 +113,7 @@ class Topology:
                 frozenset(int(key) for key in endpoints),
                 capabilities_json,
                 tuple(endpoint_names),
+                name,
             )
         self._devices = devices
         self._name_owners.update(
@@ -122,9 +129,10 @@ class Topology:
     def resolve_device(self, ieee: str) -> Device:
         return self._devices[ieee.lower()]
 
-    def update_groups(self, entries: object) -> None:
+    def update_groups(self, entries: object, *, catalog: bool = True) -> None:
         self.version += 1
         self._groups = {}
+        self.groups_seen = False
         if not isinstance(entries, list):
             raise TypeError("groups must be a list")
         groups: dict[int, Group] = {}
@@ -179,8 +187,9 @@ class Topology:
                 if (ieee, endpoint) in validated:
                     raise ValueError("duplicate member")
                 validated.add((ieee, endpoint))
-            groups[group_id] = Group(topic, frozenset(validated))
+            groups[group_id] = Group(topic, frozenset(validated), name)
         self._groups = groups
+        self.groups_seen = catalog
         self._group_name_owners.update(
             {
                 group.topic[len(self._base_topic) + 1 :]: group_id
@@ -191,9 +200,26 @@ class Topology:
     def resolve_group(self, group_id: int) -> Group:
         return self._groups[group_id]
 
+    def group_named(self, name: str) -> tuple[int, Group] | None:
+        found = [
+            (group_id, group)
+            for group_id, group in self._groups.items()
+            if group.name == name
+        ]
+        if len(found) != 1:
+            return None
+        return found[0]
 
-def validate_topology(config, topology: Topology) -> None:
-    """Require every configured address and exact group membership."""
+
+def validate_topology(
+    config, topology: Topology, *, require_groups: bool = True
+) -> None:
+    """Require every configured address.
+
+    Group membership is required only when ``require_groups`` is true. A missing
+    or different orchestrator group must not block individual circuits; it only
+    withholds the native group command.
+    """
     for item in (*config.relay_channels, *config.lights):
         try:
             device = topology.resolve_device(item.device_ieee)
@@ -251,13 +277,14 @@ def validate_topology(config, topology: Topology) -> None:
             raise ValueError("configured light state is not verified for endpoint")
     lights = {light.id: light for light in config.lights}
     for group in config.groups:
-        try:
-            observed = topology.resolve_group(group.z2m_id)
-        except KeyError as exc:
-            raise ValueError("configured group missing from topology") from exc
+        found = topology.group_named(z2m_group_name(group.name))
         expected = frozenset(
             (lights[light].device_ieee.lower(), lights[light].endpoint)
             for light in group.members
         )
-        if observed.members != expected:
+        if not require_groups:
+            continue
+        if found is None:
+            raise ValueError("configured group missing from topology")
+        if found[1].members != expected:
             raise ValueError("configured group members differ from topology")

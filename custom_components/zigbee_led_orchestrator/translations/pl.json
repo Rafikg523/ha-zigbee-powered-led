@@ -11,13 +11,13 @@
       },
       "mapping": {
         "title": "Przypisz dwa obwody",
-        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Grupa jest opcjonalna: wybierz ją tylko, gdy zawiera dokładnie oba wybrane LED-y. Po instalacji integracja uruchamia się w trybie obserwacji.",
+        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Pusta nazwa oznacza sterowanie pojedyncze. Podana nazwa tworzy grupę Zigbee2MQTT i encję światła o nazwie <nazwa>_orchestrator. Integracja utrzymuje tylko tę grupę. Po instalacji uruchamia się w trybie obserwacji.",
         "data": {
           "light_1": "Kontroler LED 1 i endpoint",
           "light_2": "Kontroler LED 2 i endpoint",
           "relay_1": "Kanał zasilania LED 1",
           "relay_2": "Kanał zasilania LED 2",
-          "group": "Grupa natywna (opcjonalnie, — oznacza bez grupy)",
+          "group_name": "Nazwa grupy (puste = bez grupy)",
           "min_send_interval_ms": "Minimalny odstęp wysyłek (ms)",
           "publication_timeout_ms": "Limit czasu publikacji (ms)",
           "boot_grace_ms": "Minimalny czas rozruchu (ms, do kalibracji)",

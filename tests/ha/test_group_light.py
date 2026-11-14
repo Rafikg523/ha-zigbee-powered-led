@@ -155,6 +155,10 @@ async def test_platform_creates_group_entity_next_to_lights():
         "entry-123_light_b",
         "entry-123_group_a",
     }
+    group_entity = next(
+        entity for entity in entities if entity.unique_id.endswith("group_a")
+    )
+    assert group_entity.name == "group_a_orchestrator"
 
 
 @pytest.fixture

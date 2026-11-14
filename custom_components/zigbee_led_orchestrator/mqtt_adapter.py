@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import time
 from collections.abc import Callable
 
@@ -12,6 +13,7 @@ from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
 
 from .device_reports import DeviceReports
+from .group_provisioner import z2m_group_name
 from .models import (
     BridgeObservation,
     EvidenceQuality,
@@ -24,6 +26,9 @@ from .models import (
 from .topology import Topology
 
 _LOGGER = logging.getLogger(__name__)
+_BRIDGE_PATHS = frozenset(
+    {"group/add", "group/options", "group/members/add", "group/members/remove"}
+)
 
 
 class MqttAdapter:
@@ -55,6 +60,7 @@ class MqttAdapter:
         self._pending_groups: object | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._topology_subscribers: set[Callable[[int], None]] = set()
+        self._bridge_waiters: dict[str, asyncio.Future] = {}
         self.last_error: str | None = None
 
     async def start(self, on_observation: Callable[[Observation], None]) -> None:
@@ -69,7 +75,7 @@ class MqttAdapter:
         try:
             if self._config.report_extension:
                 await self._subscribe(f"{self._config.base_topic}/orchestrator/report")
-            for suffix in ("state", "devices", "groups", "event"):
+            for suffix in ("state", "devices", "groups", "event", "response/group/#"):
                 await self._subscribe(f"{self._config.base_topic}/bridge/{suffix}")
         except Exception:
             await self.close()
@@ -124,6 +130,7 @@ class MqttAdapter:
             self._session += 1
             self._bridge_online = False
             self._active = False
+            self._fail_bridge_waiters()
             self.topology.update_devices([])
             self._topology_changed()
             self._have_devices = False
@@ -153,6 +160,7 @@ class MqttAdapter:
         self.reports.reset()
         self._bridge_online = False
         self._active = False
+        self._fail_bridge_waiters()
         self.topology.update_devices([])
         self._topology_changed()
         self._have_devices = False
@@ -172,7 +180,7 @@ class MqttAdapter:
         session = self._session
         if self._config.report_extension:
             await self._subscribe(f"{self._config.base_topic}/orchestrator/report")
-        for suffix in ("state", "devices", "groups", "event"):
+        for suffix in ("state", "devices", "groups", "event", "response/group/#"):
             if self._closed or session != self._session:
                 return
             await self._subscribe(f"{self._config.base_topic}/bridge/{suffix}")
@@ -197,6 +205,7 @@ class MqttAdapter:
                 if not self._bridge_online:
                     self.reports.reset()
                     self._active = False
+                    self._fail_bridge_waiters()
                     self.topology.update_devices([])
                     self._topology_changed()
                     self._have_devices = False
@@ -294,6 +303,8 @@ class MqttAdapter:
                 else:
                     self.topology.update_groups(data)
                     self._topology_changed()
+            elif message.topic.startswith(prefix + "response/group/"):
+                self._finish_bridge_response(data)
             elif message.topic == prefix + "event":
                 if not isinstance(data, dict) or not isinstance(data.get("type"), str):
                     raise ValueError("invalid event")
@@ -312,7 +323,7 @@ class MqttAdapter:
                 self._have_devices = False
                 self._pending_groups = None
             elif message.topic == f"{self._config.base_topic}/bridge/groups":
-                self.topology.update_groups([])
+                self.topology.update_groups([], catalog=False)
                 self._topology_changed()
                 self._pending_groups = None
             self.last_error = str(exc)
@@ -390,6 +401,56 @@ class MqttAdapter:
         if self._callback is not None:
             self._callback(observation)
 
+    def _fail_bridge_waiters(self) -> None:
+        waiters = tuple(self._bridge_waiters.values())
+        self._bridge_waiters.clear()
+        for future in waiters:
+            if not future.done():
+                future.set_exception(RuntimeError("bridge request unavailable"))
+
+    def _finish_bridge_response(self, data: object) -> None:
+        if not isinstance(data, dict):
+            return
+        transaction = data.get("transaction")
+        future = self._bridge_waiters.get(transaction)
+        if future is not None and not future.done():
+            future.set_result(data)
+
+    async def request_bridge(self, path: str, payload: dict[str, object]) -> dict:
+        """Publish one non-retained bridge request and return its response.
+
+        This is allowed while control is inactive. It never targets a device
+        ``/set`` topic and never retains the request.
+        """
+        if path not in _BRIDGE_PATHS or type(payload) is not dict:
+            raise ValueError("unsupported bridge request")
+        if (
+            self._closed
+            or not self._connected
+            or not self._bridge_online
+            or self._updating
+        ):
+            raise RuntimeError("bridge request unavailable")
+        transaction = secrets.token_hex(8)
+        body = dict(payload)
+        body["transaction"] = transaction
+        encoded = json.dumps(body, separators=(",", ":"), allow_nan=False)
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._bridge_waiters[transaction] = future
+        try:
+            await mqtt.async_publish(
+                self._hass,
+                f"{self._config.base_topic}/bridge/request/{path}",
+                encoded,
+                retain=False,
+            )
+            response = await future
+        finally:
+            self._bridge_waiters.pop(transaction, None)
+        if not isinstance(response, dict):
+            raise TypeError("invalid bridge response")
+        return response
+
     async def publish(
         self, topic: str, payload: dict[str, object], *, retain: bool = False
     ) -> None:
@@ -451,16 +512,15 @@ class MqttAdapter:
                 pass
         lights = {light.id: light for light in self._config.lights}
         for config in self._config.groups:
-            try:
-                group = self.topology.resolve_group(config.z2m_id)
-                expected = frozenset(
-                    (lights[member].device_ieee.lower(), lights[member].endpoint)
-                    for member in config.members
-                )
-                if group.members == expected:
-                    allowed.add(group.topic + "/set")
-            except KeyError:
+            found = self.topology.group_named(z2m_group_name(config.name))
+            if found is None:
                 continue
+            expected = frozenset(
+                (lights[member].device_ieee.lower(), lights[member].endpoint)
+                for member in config.members
+            )
+            if found[1].members == expected:
+                allowed.add(found[1].topic + "/set")
         if topic not in allowed:
             raise RuntimeError("unknown or stale command topic")
         affected = set()
@@ -474,11 +534,9 @@ class MqttAdapter:
             except KeyError:
                 continue
         for group in self._config.groups:
-            try:
-                if self.topology.resolve_group(group.z2m_id).topic + "/set" == topic:
-                    affected.update(group.members)
-            except KeyError:
-                continue
+            found = self.topology.group_named(z2m_group_name(group.name))
+            if found is not None and found[1].topic + "/set" == topic:
+                affected.update(group.members)
         try:
             await mqtt.async_publish(
                 self._hass,
@@ -495,6 +553,7 @@ class MqttAdapter:
         self._session += 1
         self.reports.reset()
         self._active = False
+        self._fail_bridge_waiters()
         tasks = tuple(self._tasks)
         for task in tasks:
             task.cancel()

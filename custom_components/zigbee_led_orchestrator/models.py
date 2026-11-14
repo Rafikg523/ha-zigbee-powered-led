@@ -290,9 +290,12 @@ class LightConfig:
 
 @dataclass(frozen=True, slots=True)
 class GroupConfig:
+    """Logical group. `name` is the label the user chose; Z2M appends a suffix."""
+
     id: str
-    z2m_id: int
+    z2m_id: int | None
     members: tuple[str, ...]
+    name: str
 
 
 @dataclass(frozen=True, slots=True)

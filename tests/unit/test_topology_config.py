@@ -94,7 +94,7 @@ def topology():
         [
             {
                 "id": 1,
-                "friendly_name": "group",
+                "friendly_name": "group_a_orchestrator",
                 "members": [
                     {"ieee_address": "0x0000000000000002", "endpoint": 1},
                     {"ieee_address": "0x0000000000000003", "endpoint": 1},
@@ -115,7 +115,7 @@ def test_config_checks_devices_endpoints_and_group_membership():
         [
             {
                 "id": 1,
-                "friendly_name": "group",
+                "friendly_name": "group_a_orchestrator",
                 "members": [
                     {"ieee_address": "0x0000000000000002", "endpoint": 1},
                 ],
@@ -144,7 +144,7 @@ def test_group_with_relay_endpoints_is_rejected():
         [
             {
                 "id": 1,
-                "friendly_name": "group",
+                "friendly_name": "group_a_orchestrator",
                 "members": [
                     {"ieee_address": "0x0000000000000002", "endpoint": 1},
                     {"ieee_address": "0x0000000000000003", "endpoint": 1},
@@ -199,7 +199,7 @@ def test_relay_values_must_match_explicit_on_off_contract():
         [
             {
                 "id": 1,
-                "friendly_name": "group",
+                "friendly_name": "group_a_orchestrator",
                 "members": [
                     {"ieee_address": "0x0000000000000002", "endpoint": 1},
                     {"ieee_address": "0x0000000000000003", "endpoint": 1},
@@ -238,7 +238,7 @@ def test_led_endpoint_must_expose_on_off_control():
         [
             {
                 "id": 1,
-                "friendly_name": "group",
+                "friendly_name": "group_a_orchestrator",
                 "members": [
                     {"ieee_address": "0x0000000000000002", "endpoint": 1},
                     {"ieee_address": "0x0000000000000003", "endpoint": 1},

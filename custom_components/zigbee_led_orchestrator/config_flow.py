@@ -145,11 +145,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             [
                                 {
                                     "id": "group_1",
-                                    "z2m_id": int(user_input["group"]),
+                                    "name": user_input["group_name"].strip(),
                                     "members": ["light_1", "light_2"],
                                 }
                             ]
-                            if user_input.get("group")
+                            if isinstance(user_input.get("group_name"), str)
+                            and user_input["group_name"].strip()
                             else []
                         ),
                         "rooms": [],
@@ -175,7 +176,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     raise ValueError(
                         "Pilot requires two circuits and at most one group"
                     )
-                validate_topology(config, self._catalog)
+                validate_topology(config, self._catalog, require_groups=False)
             except TypeError, ValueError, KeyError, IndexError:
                 errors["base"] = "invalid_mapping"
             else:
@@ -221,22 +222,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             relay_options[f"{device.ieee}|{endpoint}|{key}"] = (
                                 f"{label} / {key}"
                             )
-        light_addresses = {
-            (key.split("|")[0], int(key.split("|")[1])) for key in light_options
-        }
-        group_options = {"": "—"}
-        group_options.update(
-            {
-                str(group_id): group.topic
-                for group_id, group in self._catalog.groups()
-                if len(group.members) == 2 and group.members <= light_addresses
-            }
-        )
         schema = {vol.Required(f"light_{i}"): vol.In(light_options) for i in (1, 2)}
         schema.update(
             {vol.Required(f"relay_{i}"): vol.In(relay_options) for i in (1, 2)}
         )
-        schema[vol.Optional("group", default="")] = vol.In(group_options)
+        schema[vol.Optional("group_name", default="")] = str
         schema[vol.Required("min_send_interval_ms", default=100)] = vol.All(
             vol.Coerce(int), vol.Range(min=1)
         )
