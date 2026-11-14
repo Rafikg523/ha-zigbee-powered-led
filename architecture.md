@@ -10,7 +10,7 @@ Pilotaż przewiduje dwa obwody zasilane kanałami jednego przekaźnika oraz jedn
 
 ## Stan implementacji
 
-Stan opisany przy aktualizacji dokumentu: **P00–P05 zakończone, P06 rozpoczęte**. Kod obejmuje fundamenty testowalnego rdzenia i wstępny reconciler, lecz nie zawiera kompletnej maszyny sterującej ani działającej integracji z Home Assistant. `__init__.py` jest jeszcze szkieletem: nie inicjuje obsługi użytkownika, MQTT ani encji. Instalacja przez HACS i zielone testy rdzenia nie oznaczają gotowości do sterowania instalacją.
+Stan opisany przy aktualizacji dokumentu: **P00–P10 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle i encje light. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
 
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
@@ -19,10 +19,11 @@ Stan opisany przy aktualizacji dokumentu: **P00–P05 zakończone, P06 rozpoczę
 | `desired_store.py` | Aktualna intencja, atomowe aktualizacje i numer `generation` | Istnieje |
 | `observation_store.py` | Raporty przekaźnika/LED/mostka, jakość danych, `power_epoch` i `bridge_epoch` | Istnieje |
 | `command_arbiter.py` | Aktualność poleceń, priorytet OFF, ograniczanie i koordynacja wysyłek, kwarantanna niepewnej publikacji | Istnieje; integracja z rzeczywistym HA MQTT jest do sprawdzenia |
-| `power_manager.py` | Konserwatywna ocena gotowości na podstawie danych i minimalnego czasu rozruchu | Częściowo: `is_ready`; reszta P06 oczekuje |
-| `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Istnieje wstępny reconciler pojedynczego obwodu korzystający z jednej maszyny faz; pełny przegląd P06 pozostaje do wykonania |
-| `mqtt_adapter.py`, `topology.py` | Połączenie przez MQTT HA i weryfikacja topologii Z2M | Planowane w P08 |
-| `runtime.py`, `config_flow.py`, `light.py`, sensory diagnostyczne | Cykl życia integracji, konfiguracja i encje HA | Planowane w P09–P12 |
+| `power_manager.py` | Konserwatywna ocena gotowości na podstawie danych i minimalnego czasu rozruchu | Istnieje `is_ready`; potwierdzenia i timeouty obsługuje reconciler |
+| `state_machine.py`, `reconciler.py` | Fazy obwodu i uzgadnianie intencji z obserwacjami | Istnieje reconciler pojedynczego obwodu z obsługą zewnętrznych zmian, ograniczoną korelacją wysyłek i przerwania połączenia; adapter musi przekazywać zmiany sesji i weryfikować źródło raportów |
+| `mqtt_adapter.py`, `topology.py` | Połączenie przez MQTT HA i weryfikacja topologii Z2M | Istnieją; wymagają pełnej weryfikacji formatów Z2M w rzeczywistej instalacji |
+| `runtime.py`, `config_flow.py`, `light.py` | Cykl życia integracji, konfiguracja i encje light | Istnieją i przetestowane syntetycznie; capabilities przypisane do endpointów, pełna integracja reconcilera z konwersjami jasności do P11 |
+| sensory diagnostyczne | effective/phase i confirmed | Planowane w P12 |
 | `group_coordinator.py`, `room_coordinator.py` | Gotowość członków, polecenia grupowe i pokojowe | Planowane w P11 i P15 |
 | `tests/helpers/`, `tests/unit/` | Symulator zegara/transportu i testy rdzenia | Istnieją; nie zastępują testów sprzętowych |
 
@@ -82,3 +83,7 @@ W MVP plan obejmuje dwie lampy i jedną grupę z dedykowanymi kanałami. Trzy gr
 Przed implementacją porównaj kod z bieżącym zadaniem w planie, dodaj test zachowania i po weryfikacji uzupełnij rejestr. Przy zmianie architektury lub odpowiedzialności modułów zaktualizuj ten dokument i plan, zachowując rozróżnienie między tym, co istnieje, a tym, co dopiero zaplanowano.
 
 Czas `power_off_at` jest czasem odebrania wiarygodnego raportu o przejściu ON → OFF, a nie znaną chwilą fizycznego przełączenia. Pierwszy odczyt OFF po uruchomieniu nie tworzy takiego czasu; przed kolejnym ON stosowany jest zachowawczy odstęp liczony od odebrania tego odczytu. Ponowne raporty OFF nie przesuwają czasu znanego przejścia.
+
+Adapter klasyfikuje zwykłe raporty Z2M jako dane cache lub o nieznanym źródle, nie jako dowód od urządzenia. Skutkiem jest zachowawcza odmowa potwierdzenia gotowości, dopóki nie zostanie zweryfikowane źródło wiarygodnych raportów. Weryfikacja grup używa dokładnego zestawu IEEE i endpointów; po zmianie listy urządzeń wymaga ponownego raportu grup. Runtime musi przekazać bieżącą wersję topologii do walidacji arbitra i spiąć obserwacje ze sklepem; sam adapter nie jest jeszcze działającą integracją HA.
+
+`light.py` oraz `light_capabilities.py` są częściową pracą P10: testują prezentację celu i konwersje na syntetycznych danych. Nie są jeszcze uruchamiane przez HA ani podłączone do reconciler; limity muszą pochodzić z zatwierdzonych capabilities danego endpointu.
