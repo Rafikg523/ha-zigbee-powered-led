@@ -10,7 +10,7 @@ Pilotaż przewiduje dwa obwody zasilane kanałami jednego przekaźnika oraz jedn
 
 ## Stan implementacji
 
-Stan opisany przy aktualizacji dokumentu: **P00–P12 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light, koordynator grup z barierą gotowości oraz preferencje, diagnostykę i usługi serwisowe. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
+Stan opisany przy aktualizacji dokumentu: **P00–P13 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light, koordynator grup z barierą gotowości oraz preferencje, diagnostykę i usługi serwisowe. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
 
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
@@ -30,6 +30,7 @@ Stan opisany przy aktualizacji dokumentu: **P00–P12 zakończone w zakresie syn
 | `group_coordinator.py` | Bariera gotowości grupy i pojedynczy `GROUP_SET` dla w pełni gotowych członków | Istnieje (P11), testowany syntetycznie |
 | `room_coordinator.py` | Operacje pokojowe | Planowane w P15 |
 | `tests/helpers/`, `tests/unit/` | Symulator zegara/transportu i testy rdzenia | Istnieją; nie zastępują testów sprzętowych |
+| `tests/scenarios/`, `tests/fixtures/z2m/` | Scenariusze całego config entry przez atrapę HA MQTT; adapter modelowany w harnessie podnosi raporty nieretained do `DEVICE_REPORT` | Istnieją (P13); wynik to MVP lokalne, nie dowód na instalacji |
 
 Nazwy przyszłych modułów są planem, nie publicznym API gotowym do użycia. Szczegółowe zakresy i zależności weryfikuj w planie i kodzie.
 
