@@ -10,13 +10,12 @@
         }
       },
       "mapping": {
-        "title": "Map two circuits",
-        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. Leave the group name empty to control the LEDs individually. A name such as Salon creates a Zigbee2MQTT group and a matching light entity called Salon_orchestrator. The integration maintains only that group. Setup starts in observation mode.",
+        "title": "Map one circuit",
+        "description": "Name the virtual light, then select one LED controller and its power channel. Leave the group name empty to control circuits individually. A name such as Salon creates a Zigbee2MQTT group and a light entity called Salon_orchestrator. Each circuit added later joins that group. These timings are shared. Setup starts in observation mode.",
         "data": {
-          "light_1": "LED controller 1 and endpoint",
-          "light_2": "LED controller 2 and endpoint",
-          "relay_1": "LED 1 power relay channel",
-          "relay_2": "LED 2 power relay channel",
+          "name": "Virtual entity name",
+          "light": "LED controller and endpoint",
+          "relay": "Power relay channel",
           "group_name": "Group name (optional; empty means no group)",
           "min_send_interval_ms": "Minimum send interval (ms)",
           "publication_timeout_ms": "Publication timeout (ms)",
@@ -27,24 +26,51 @@
     },
     "error": {
       "invalid_mapping": "The configuration or physical mapping is invalid.",
+      "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
+      "already_mapped": "That name, controller, or relay channel is already used.",
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
     },
     "abort": {
-      "single_instance": "Only one Zigbee LED Orchestrator instance is supported."
+      "single_instance": "Only one Zigbee LED Orchestrator instance is supported. Add another circuit from Configure on the existing entry."
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "Zigbee LED Orchestrator",
+        "description": "Change the control mode or add another switch and controller pair. Adding a circuit reloads the integration and returns it to observation mode. The new circuit joins the group when one was named during setup.",
+        "menu_options": {
+          "control": "Control mode",
+          "add_circuit": "Add circuit"
+        }
+      },
+      "control": {
         "title": "Control mode",
         "description": "Activate on site after verifying mapping, backup/rollback and disabling other writers for these circuits. Fresh reports from the Z2M extension are required. Restart always returns to observation mode.",
         "data": {
           "active": "Enable active control"
         }
+      },
+      "add_circuit": {
+        "title": "Add circuit",
+        "description": "Name the virtual light and select one controller with its power channel. Timing settings stay as they are. Saving reloads the integration and returns it to observation mode. The new circuit joins the existing group when one was configured.",
+        "data": {
+          "name": "Virtual entity name",
+          "light": "LED controller and endpoint",
+          "relay": "Power relay channel"
+        }
       }
     },
     "error": {
-      "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change."
+      "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change.",
+      "invalid_mapping": "The configuration or physical mapping is invalid.",
+      "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
+      "already_mapped": "That name, controller, or relay channel is already used.",
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
+    },
+    "abort": {
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
+      "no_free_circuit": "Every discovered controller or relay channel is already mapped."
     }
   },
   "services": {
