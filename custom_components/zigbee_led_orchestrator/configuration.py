@@ -86,7 +86,15 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
     root = _mapping(
         data,
         "configuration",
-        {"base_topic", "relay_channels", "lights", "groups", "rooms", "policies"},
+        {
+            "base_topic",
+            "relay_channels",
+            "lights",
+            "groups",
+            "rooms",
+            "policies",
+            "report_extension",
+        },
     )
     base_topic = _string(root.get("base_topic"), "base_topic")
     if (
@@ -227,6 +235,8 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
     for key in ("min_send_interval_ms", "publication_timeout_ms"):
         if key not in policies:
             raise ValueError(f"policies.{key} is required")
+    if type(root.get("report_extension", False)) is not bool:
+        raise ValueError("report_extension must be boolean")
     return OrchestratorConfig(
         base_topic=base_topic,
         relay_channels=tuple(channels),
@@ -234,4 +244,5 @@ def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:
         groups=tuple(groups),
         rooms=tuple(rooms),
         policies=PolicyConfig(**policies),
+        report_extension=root.get("report_extension", False),
     )

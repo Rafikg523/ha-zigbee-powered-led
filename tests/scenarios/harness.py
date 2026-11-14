@@ -85,8 +85,8 @@ class Rig:
     def runtime(self):
         return self.entry.runtime_data
 
-    async def setup(self):
-        self.entry = MockConfigEntry(domain=DOMAIN, data=valid_config())
+    async def setup(self, config=None):
+        self.entry = MockConfigEntry(domain=DOMAIN, data=config or valid_config())
         self.entry.add_to_hass(self.hass)
         assert await self.hass.config_entries.async_setup(self.entry.entry_id)
         await self.settle()

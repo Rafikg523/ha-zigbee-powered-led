@@ -3,26 +3,25 @@
     "step": {
       "user": {
         "title": "Connect Zigbee2MQTT",
-        "description": "Read the existing device and group catalog through Home Assistant MQTT. No commands are sent.",
+        "description": "Read the existing catalog through Home Assistant MQTT. The report extension is optional for setup and required for active pilot testing. No device commands are sent.",
         "data": {
-          "base_topic": "Zigbee2MQTT base topic"
+          "base_topic": "Zigbee2MQTT base topic",
+          "report_extension": "Use Zigbee2MQTT report extension (see installation guide)"
         }
       },
       "mapping": {
         "title": "Map two circuits",
-        "description": "Select LED controllers, relay channels and an existing group from the catalog. Enter verified temperature ranges and timing values.",
+        "description": "Select two LED controllers and their power channels. Temperature ranges are read from the catalog. The native group is optional and must contain exactly the two selected LEDs. Setup starts in observation mode.",
         "data": {
           "light_1": "LED controller 1 and endpoint",
           "light_2": "LED controller 2 and endpoint",
           "relay_1": "LED 1 power relay channel",
           "relay_2": "LED 2 power relay channel",
-          "group": "Existing Zigbee2MQTT group",
-          "min_kelvin_1": "LED 1 minimum color temperature (K)",
-          "max_kelvin_1": "LED 1 maximum color temperature (K)",
-          "min_kelvin_2": "LED 2 minimum color temperature (K)",
-          "max_kelvin_2": "LED 2 maximum color temperature (K)",
+          "group": "Native group (optional; — means no group)",
           "min_send_interval_ms": "Minimum send interval (ms)",
-          "publication_timeout_ms": "Publication timeout (ms)"
+          "publication_timeout_ms": "Publication timeout (ms)",
+          "boot_grace_ms": "Minimum boot grace (ms, requires calibration)",
+          "readiness_timeout_ms": "Readiness timeout (ms)"
         }
       }
     },
@@ -38,14 +37,14 @@
     "step": {
       "init": {
         "title": "Control mode",
-        "description": "Enable active control only when this integration is the sole operational writer for the managed devices. Enabling does not restore previous commands.",
+        "description": "Activate on site after verifying mapping, backup/rollback and disabling other writers for these circuits. Fresh reports from the Z2M extension are required. Restart always returns to observation mode.",
         "data": {
           "active": "Enable active control"
         }
       }
     },
     "error": {
-      "control_unavailable": "Control cannot be enabled until the bridge and a valid topology are available."
+      "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change."
     }
   },
   "services": {

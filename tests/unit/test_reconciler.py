@@ -595,3 +595,23 @@ async def test_disabling_does_not_forget_off_in_flight(rig):
     transport.release()
     await clock.advance(0.2)
     assert len(transport.sent) == before + 1
+
+
+async def test_corrective_setting_is_not_skipped_after_unconfirmed_publish(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True, brightness=100), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=100)
+    await clock.advance(2.6)
+    assert engine.snapshot("led").confirmed
+    engine.submit(("led",), IntentPatch(brightness=200), source="ui")
+    await clock.advance(0.2)
+    assert transport.sent[-1].payload["brightness"] == 200
+    count = len(transport.sent)
+    engine.submit(("led",), IntentPatch(brightness=100), source="ui")
+    await clock.advance(0.2)
+    assert len(transport.sent) == count + 1
+    assert transport.sent[-1].payload["brightness"] == 100
+    assert not engine.snapshot("led").confirmed

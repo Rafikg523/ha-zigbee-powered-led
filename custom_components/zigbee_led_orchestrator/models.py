@@ -324,3 +324,4 @@ class OrchestratorConfig:
     groups: tuple[GroupConfig, ...]
     rooms: tuple[RoomConfig, ...]
     policies: PolicyConfig
+    report_extension: bool = False

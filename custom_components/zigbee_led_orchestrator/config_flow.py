@@ -12,6 +12,7 @@ from homeassistant.core import callback
 
 from .configuration import validate_config
 from .const import DOMAIN
+from .light_capabilities import LightCapabilities
 from .models import ControlMode
 from .topology import Topology, validate_topology
 
@@ -77,12 +78,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except TimeoutError, ValueError, TypeError, KeyError:
                     errors["base"] = "catalog_unavailable"
                 else:
+                    self._report_extension = user_input.get("report_extension", False)
                     self._base_topic = base_topic
                     return await self.async_step_mapping()
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {vol.Required("base_topic", default="zigbee2mqtt"): str}
+                {
+                    vol.Required("base_topic", default="zigbee2mqtt"): str,
+                    vol.Optional("report_extension", default=False): bool,
+                }
             ),
             errors=errors,
         )
@@ -97,6 +102,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     lights = [user_input[f"light_{i}"].split("|") for i in (1, 2)]
                     relays = [user_input[f"relay_{i}"].split("|") for i in (1, 2)]
+                    ranges = []
+                    for ieee, endpoint in lights:
+                        device = self._catalog.resolve_device(ieee)
+                        capability = LightCapabilities.from_exposes(
+                            device.capabilities,
+                            endpoint=device.endpoint_name(int(endpoint)),
+                        )
+                        mired = capability.mired_range
+                        ranges.append(
+                            (round(1_000_000 / mired[1]), round(1_000_000 / mired[0]))
+                            if mired
+                            else (2000, 6500)
+                        )
                     data = {
                         "base_topic": self._base_topic,
                         "relay_channels": [
@@ -114,18 +132,26 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 "device_ieee": values[0],
                                 "endpoint": int(values[1]),
                                 "power_channel": f"relay_{i}",
-                                "min_kelvin": user_input[f"min_kelvin_{i}"],
-                                "max_kelvin": user_input[f"max_kelvin_{i}"],
+                                "min_kelvin": user_input.get(
+                                    f"min_kelvin_{i}", ranges[i - 1][0]
+                                ),
+                                "max_kelvin": user_input.get(
+                                    f"max_kelvin_{i}", ranges[i - 1][1]
+                                ),
                             }
                             for i, values in enumerate(lights, 1)
                         ],
-                        "groups": [
-                            {
-                                "id": "group_1",
-                                "z2m_id": int(user_input["group"]),
-                                "members": ["light_1", "light_2"],
-                            }
-                        ],
+                        "groups": (
+                            [
+                                {
+                                    "id": "group_1",
+                                    "z2m_id": int(user_input["group"]),
+                                    "members": ["light_1", "light_2"],
+                                }
+                            ]
+                            if user_input.get("group")
+                            else []
+                        ),
                         "rooms": [],
                         "policies": {
                             "min_send_interval_ms": user_input["min_send_interval_ms"],
@@ -134,13 +160,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             ],
                         },
                     }
+                    for key, default in (
+                        ("boot_grace_ms", 2500),
+                        ("readiness_timeout_ms", 8000),
+                    ):
+                        data["policies"][key] = user_input.get(key, default)
+                data["report_extension"] = self._report_extension
                 config = validate_config(data)
                 if (
                     len(config.lights) != 2
                     or len(config.relay_channels) != 2
-                    or len(config.groups) != 1
+                    or len(config.groups) > 1
                 ):
-                    raise ValueError("MVP requires two circuits and one group")
+                    raise ValueError(
+                        "Pilot requires two circuits and at most one group"
+                    )
                 validate_topology(config, self._catalog)
             except TypeError, ValueError, KeyError, IndexError:
                 errors["base"] = "invalid_mapping"
@@ -155,8 +189,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for device in self._catalog.devices():
             for endpoint in device.endpoints:
                 label = f"{device.topic} — {device.ieee} / {endpoint}"
-                light_options[f"{device.ieee}|{endpoint}"] = label
                 endpoint_name = device.endpoint_name(endpoint)
+                if any(
+                    isinstance(expose, dict)
+                    and expose.get("type") == "light"
+                    and expose.get("endpoint") == endpoint_name
+                    for expose in device.capabilities
+                ):
+                    light_options[f"{device.ieee}|{endpoint}"] = label
                 for expose in device.capabilities:
                     if (
                         not isinstance(expose, dict)
@@ -181,27 +221,32 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             relay_options[f"{device.ieee}|{endpoint}|{key}"] = (
                                 f"{label} / {key}"
                             )
-        group_options = {
-            str(group_id): group.topic for group_id, group in self._catalog.groups()
+        light_addresses = {
+            (key.split("|")[0], int(key.split("|")[1])) for key in light_options
         }
+        group_options = {"": "—"}
+        group_options.update(
+            {
+                str(group_id): group.topic
+                for group_id, group in self._catalog.groups()
+                if len(group.members) == 2 and group.members <= light_addresses
+            }
+        )
         schema = {vol.Required(f"light_{i}"): vol.In(light_options) for i in (1, 2)}
         schema.update(
             {vol.Required(f"relay_{i}"): vol.In(relay_options) for i in (1, 2)}
         )
-        schema[vol.Required("group")] = vol.In(group_options)
-        for i in (1, 2):
-            schema[vol.Required(f"min_kelvin_{i}")] = vol.All(
-                vol.Coerce(int), vol.Range(min=1)
-            )
-            schema[vol.Required(f"max_kelvin_{i}")] = vol.All(
-                vol.Coerce(int), vol.Range(min=1)
-            )
-        schema[vol.Required("min_send_interval_ms")] = vol.All(
+        schema[vol.Optional("group", default="")] = vol.In(group_options)
+        schema[vol.Required("min_send_interval_ms", default=100)] = vol.All(
             vol.Coerce(int), vol.Range(min=1)
         )
-        schema[vol.Required("publication_timeout_ms")] = vol.All(
+        schema[vol.Required("publication_timeout_ms", default=3000)] = vol.All(
             vol.Coerce(int), vol.Range(min=1)
         )
+        for key, default in (("boot_grace_ms", 2500), ("readiness_timeout_ms", 8000)):
+            schema[vol.Required(key, default=default)] = vol.All(
+                vol.Coerce(int), vol.Range(min=1)
+            )
         return self.async_show_form(
             step_id="mapping", data_schema=vol.Schema(schema), errors=errors
         )
@@ -221,7 +266,7 @@ class OptionsFlow(config_entries.OptionsFlow):
                 self.config_entry.runtime_data.set_mode(
                     ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE
                 )
-            except RuntimeError:
+            except RuntimeError, ValueError, AttributeError:
                 errors["base"] = "control_unavailable"
             else:
                 return self.async_create_entry(data={"active": user_input["active"]})

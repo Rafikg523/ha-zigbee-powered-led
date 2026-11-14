@@ -36,11 +36,15 @@ class LightCapabilities:
                 if (
                     type(minimum) is not int
                     or type(maximum) is not int
-                    or minimum < 1
+                    or minimum < (0 if name == "brightness" else 1)
                     or maximum < minimum
                     or name in ranges
                 ):
                     raise ValueError("invalid or ambiguous capability range")
+                if name == "brightness":
+                    minimum = max(1, minimum)
+                    if maximum < minimum:
+                        raise ValueError("brightness has no nonzero range")
                 ranges[name] = (minimum, maximum)
         return cls(ranges.get("brightness"), ranges.get("color_temp"))
 

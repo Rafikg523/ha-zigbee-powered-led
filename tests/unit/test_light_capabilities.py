@@ -84,3 +84,17 @@ def test_reported_brightness_is_normalized_to_ha_range():
     assert capabilities.ha_brightness(50) == 127
     with pytest.raises(ValueError):
         capabilities.ha_brightness(101)
+
+
+def test_zero_minimum_brightness_is_supported_without_commanding_off():
+    capabilities = LightCapabilities.from_exposes(
+        [
+            {
+                "type": "light",
+                "features": [{"name": "brightness", "value_min": 0, "value_max": 254}],
+            }
+        ]
+    )
+    assert capabilities.brightness_range == (1, 254)
+    assert capabilities.device_brightness(1) == 1
+    assert capabilities.ha_brightness(254) == 255

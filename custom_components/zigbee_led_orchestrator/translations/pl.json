@@ -3,26 +3,25 @@
     "step": {
       "user": {
         "title": "Połącz z Zigbee2MQTT",
-        "description": "Odczytaj istniejący katalog urządzeń i grup przez MQTT Home Assistanta. Żadne polecenia nie są wysyłane.",
+        "description": "Odczyt istniejącego katalogu przez MQTT Home Assistanta. Rozszerzenie raportów jest opcjonalne przy konfiguracji i wymagane do prób aktywnego sterowania. Nie wysyłamy komend do urządzeń.",
         "data": {
-          "base_topic": "Temat bazowy Zigbee2MQTT"
+          "base_topic": "Temat bazowy Zigbee2MQTT",
+          "report_extension": "Użyj rozszerzenia raportów Zigbee2MQTT (patrz instrukcja instalacji)"
         }
       },
       "mapping": {
         "title": "Przypisz dwa obwody",
-        "description": "Wybierz kontrolery LED, kanały przekaźnika i istniejącą grupę na podstawie katalogu. Podaj sprawdzone zakresy temperatury i wartości czasów.",
+        "description": "Wybierz dwa kontrolery i odpowiadające im kanały zasilania. Zakres temperatury zostanie odczytany z katalogu. Grupa jest opcjonalna: wybierz ją tylko, gdy zawiera dokładnie oba wybrane LED-y. Po instalacji integracja uruchamia się w trybie obserwacji.",
         "data": {
           "light_1": "Kontroler LED 1 i endpoint",
           "light_2": "Kontroler LED 2 i endpoint",
           "relay_1": "Kanał zasilania LED 1",
           "relay_2": "Kanał zasilania LED 2",
-          "group": "Istniejąca grupa Zigbee2MQTT",
-          "min_kelvin_1": "Minimalna temperatura LED 1 (K)",
-          "max_kelvin_1": "Maksymalna temperatura LED 1 (K)",
-          "min_kelvin_2": "Minimalna temperatura LED 2 (K)",
-          "max_kelvin_2": "Maksymalna temperatura LED 2 (K)",
+          "group": "Grupa natywna (opcjonalnie, — oznacza bez grupy)",
           "min_send_interval_ms": "Minimalny odstęp wysyłek (ms)",
-          "publication_timeout_ms": "Limit czasu publikacji (ms)"
+          "publication_timeout_ms": "Limit czasu publikacji (ms)",
+          "boot_grace_ms": "Minimalny czas rozruchu (ms, do kalibracji)",
+          "readiness_timeout_ms": "Timeout gotowości (ms)"
         }
       }
     },
@@ -38,14 +37,14 @@
     "step": {
       "init": {
         "title": "Tryb sterowania",
-        "description": "Włącz aktywne sterowanie dopiero, gdy ta integracja jest jedynym nadawcą poleceń do zarządzanych urządzeń. Włączenie nie przywraca wcześniejszych poleceń.",
+        "description": "Aktywuj dopiero na miejscu po potwierdzeniu mapowania, kopii i rollbacku oraz wyłączeniu innych ścieżek sterowania tymi obwodami. Potrzebne są świeże raporty urządzeń z rozszerzenia Z2M. Po restarcie integracja ponownie uruchomi się w trybie obserwacji.",
         "data": {
           "active": "Włącz aktywne sterowanie"
         }
       }
     },
     "error": {
-      "control_unavailable": "Nie można włączyć sterowania bez dostępnego mostka i prawidłowej topologii."
+      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync."
     }
   },
   "services": {

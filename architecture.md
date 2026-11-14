@@ -10,12 +10,12 @@ Pilotaż przewiduje dwa obwody zasilane kanałami jednego przekaźnika oraz jedn
 
 ## Stan implementacji
 
-Stan opisany przy aktualizacji dokumentu: **P00–P13 zakończone w zakresie syntetycznym**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light, koordynator grup z barierą gotowości oraz preferencje, diagnostykę i usługi serwisowe. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
+Stan opisany przy aktualizacji dokumentu: **P00–P13 zakończone w zakresie syntetycznym; wersja 0.1.0b1 przygotowana do instalacji i prób**. Kod obejmuje pełny rdzeń domenowy, adapter MQTT, katalog topologii, config flow, runtime lifecycle, encje light, koordynator grup z barierą gotowości oraz preferencje, diagnostykę i usługi serwisowe. `__init__.py` inicjuje lifecycle config entry. Instalacja przez HACS i zielone testy nie oznaczają gotowości do sterowania instalacją — aktywny pilotaż wymaga P14.
 
 | Element | Odpowiedzialność | Stan |
 |---|---|---|
 | `models.py`, `const.py`, `protocols.py` | Typy stanu, kontrakty zegara i transportu | Istnieją |
-| `configuration.py` | Walidacja modelu konfiguracji bez zależności od HA | Istnieje; konfiguracja przez UI jeszcze nie istnieje |
+| `configuration.py` | Walidacja modelu konfiguracji bez zależności od HA | Istnieje; UI dla dwóch obwodów i opcjonalnej grupy |
 | `desired_store.py` | Aktualna intencja, atomowe aktualizacje i numer `generation` | Istnieje |
 | `observation_store.py` | Raporty przekaźnika/LED/mostka, jakość danych, `power_epoch` i `bridge_epoch` | Istnieje |
 | `command_arbiter.py` | Aktualność poleceń, priorytet OFF, ograniczanie i koordynacja wysyłek, kwarantanna niepewnej publikacji | Istnieje; integracja z rzeczywistym HA MQTT jest do sprawdzenia |
@@ -100,6 +100,17 @@ Przed implementacją porównaj kod z bieżącym zadaniem w planie, dodaj test za
 
 Czas `power_off_at` jest czasem odebrania wiarygodnego raportu o przejściu ON → OFF, a nie znaną chwilą fizycznego przełączenia. Pierwszy odczyt OFF po uruchomieniu nie tworzy takiego czasu; przed kolejnym ON stosowany jest zachowawczy odstęp liczony od odebrania tego odczytu. Ponowne raporty OFF nie przesuwają czasu znanego przejścia.
 
-Adapter klasyfikuje zwykłe raporty Z2M jako dane cache lub o nieznanym źródle, nie jako dowód od urządzenia. Skutkiem jest zachowawcza odmowa potwierdzenia gotowości, dopóki nie zostanie zweryfikowane źródło wiarygodnych raportów. Weryfikacja grup używa dokładnego zestawu IEEE i endpointów; po zmianie listy urządzeń wymaga ponownego raportu grup. Runtime musi przekazać bieżącą wersję topologii do walidacji arbitra i spiąć obserwacje ze sklepem; sam adapter nie jest jeszcze działającą integracją HA.
+Adapter klasyfikuje zwykłe raporty Z2M jako dane cache lub o nieznanym źródle. Opcjonalna ścieżka surowych raportów z rozszerzenia Z2M opisana poniżej może dostarczyć DEVICE_REPORT; zwykłe wiadomości nigdy nie są do niego awansowane. Weryfikacja grup używa dokładnego zestawu IEEE i endpointów; po zmianie listy urządzeń wymaga ponownego raportu grup. Runtime musi przekazać bieżącą wersję topologii do walidacji arbitra i spiąć obserwacje ze sklepem; sam adapter nie jest jeszcze działającą integracją HA.
 
-`light.py` oraz `light_capabilities.py` są częściową pracą P10: testują prezentację celu i konwersje na syntetycznych danych. Nie są jeszcze uruchamiane przez HA ani podłączone do reconciler; limity muszą pochodzić z zatwierdzonych capabilities danego endpointu.
+`light.py` i `light_capabilities.py` są podłączone do runtime i HA. Zakresy parametrów pochodzą z exposes endpointu; brightness 0–254 daje zakres komend ON 1–254, a OFF jest obsługiwany przez przekaźnik.
+
+
+## Wersja testowa do instalacji (2026-11-14)
+
+Formularz umożliwia dwa obwody bez grupy; grupa jest opcjonalna i wymaga dokładnego składu wybranych endpointów LED. Zakres CCT jest odczytywany z katalogu. Do aktywnych prób służy opcjonalny `report_extension`, domyślnie false; stare wpisy zachowują schemat 1 i konserwatywną klasyfikację zwykłych stanów.
+
+`z2m/orchestrator-reports.mjs` używa eventBus Zigbee2MQTT 2.14.3 do przekazywania wyłącznie surowych attributeReport/readResponse dla genOnOff, genLevelCtrl i lightingColorCtrl. Nie wykonuje komend ani odczytów Zigbee. HA przez swój klient MQTT przesyła metadane sesji na `<base>/orchestrator/subscribe`; extension zwraca potwierdzenie i raporty na `<base>/orchestrator/report`, bez retain. `device_reports.py` sprawdza nonce sesji, sekwencję, dokładny IEEE/endpoint i typy atrybutów; agreguje tylko atrybuty odebrane w bieżącej epoce potwierdzonego zasilania. Po zmianie zasilania/reconnect/resync cache dowodów jest czyszczony. W tym trybie zwykłe scalone MQTT nie nadpisuje dowodów. Publikacje metadanych w OBSERVE nie są operacyjnym `/set` ani `/get`.
+
+Źródłem zaufania jest zainstalowane rozszerzenie i uprawnienia brokera. Nie dowodzi to emisji światła, obsługi innych klastrów, spontanicznych raportów urządzenia ani fizycznego odbioru pilotażu. Instrukcje publiczne znajdują się w INSTALLATION.md i TESTING.md; lokalna dokumentacja instalacji pozostaje ignorowana.
+
+Przy luce w sekwencji kanał dowodów jest blokowany do jawnego resync; utracone OFF nie może zostać ukryte przez następne ON. Zakończenie publikacji LED/grupy czyści agregat surowych atrybutów tych LED-ów. Reconciler utrzymuje ponadto znacznik publikacji (w locie = nieznany) i nie pomija korekty ani nie potwierdza celu na podstawie obserwacji sprzed nowszej wysyłki.

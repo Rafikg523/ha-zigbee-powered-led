@@ -135,6 +135,29 @@ def test_missing_endpoint_is_rejected():
         validate_topology(validate_config(raw), topology())
 
 
+def test_group_with_relay_endpoints_is_rejected():
+    """A group including both relay channels is not a two-light group."""
+    from custom_components.zigbee_led_orchestrator.topology import validate_topology
+
+    catalog = topology()
+    catalog.update_groups(
+        [
+            {
+                "id": 1,
+                "friendly_name": "group",
+                "members": [
+                    {"ieee_address": "0x0000000000000002", "endpoint": 1},
+                    {"ieee_address": "0x0000000000000003", "endpoint": 1},
+                    {"ieee_address": "0x0000000000000001", "endpoint": 1},
+                    {"ieee_address": "0x0000000000000001", "endpoint": 2},
+                ],
+            }
+        ]
+    )
+    with pytest.raises(ValueError, match="group members differ"):
+        validate_topology(validate_config(valid_config()), catalog)
+
+
 def test_relay_state_key_must_be_verified_for_its_endpoint():
     from custom_components.zigbee_led_orchestrator.topology import validate_topology
 

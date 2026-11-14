@@ -285,7 +285,7 @@ class Runtime:
             self.set_mode(ControlMode.OBSERVE)
 
     async def resync(self) -> None:
-        """Forget evidence and re-read the catalog; never publishes or powers on."""
+        """Forget evidence and re-read the catalog; never sends device commands."""
         if self._closed:
             raise RuntimeError("runtime closed")
         if self.mode == ControlMode.ACTIVE:
@@ -311,6 +311,10 @@ class Runtime:
         redact = self._redactor()
         data: dict[str, object] = {
             "mode": self.mode.value,
+            "report_extension_enabled": self.config.report_extension,
+            "report_extension_ready": bool(
+                getattr(getattr(self.adapter, "reports", None), "ready", False)
+            ),
             "topology_stale": self._stale,
             "bridge_online": self._observations.bridge_online,
             "control_notice": CONTROL_NOTICE,

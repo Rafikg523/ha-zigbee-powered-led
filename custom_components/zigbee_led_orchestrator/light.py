@@ -68,6 +68,7 @@ class OrchestratorLight(LightEntity):
         self._attr_color_mode = mode
         self._attr_supported_color_modes = {mode}
         self._light_id = light_id
+        self._attr_name = light_id.replace("_", " ").title()
         self._attr_unique_id = f"{entry_id}_{light_id}"
         self._config_min_kelvin = min_kelvin
         self._config_max_kelvin = max_kelvin

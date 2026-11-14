@@ -11,6 +11,7 @@ from collections.abc import Callable
 from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant
 
+from .device_reports import DeviceReports
 from .models import (
     BridgeObservation,
     EvidenceQuality,
@@ -39,6 +40,7 @@ class MqttAdapter:
         self._config = config
         self._now = now
         self.topology = Topology(config.base_topic)
+        self.reports = DeviceReports(config)
         self._session = 0
         self._subscriptions: dict[str, Callable[[], None]] = {}
         self._status_unsubscribe: Callable[[], None] | None = None
@@ -65,6 +67,8 @@ class MqttAdapter:
             self._hass, self._connection_changed
         )
         try:
+            if self._config.report_extension:
+                await self._subscribe(f"{self._config.base_topic}/orchestrator/report")
             for suffix in ("state", "devices", "groups", "event"):
                 await self._subscribe(f"{self._config.base_topic}/bridge/{suffix}")
         except Exception:
@@ -84,6 +88,8 @@ class MqttAdapter:
         """Explicitly authorize new commands; changing mode never publishes."""
         if active and (self._closed or not self._connected or not self._bridge_online):
             raise RuntimeError("control unavailable")
+        if active and self._config.report_extension and not self.reports.ready:
+            raise RuntimeError("report extension unavailable; resync after loading it")
         self._active = active
 
     async def _subscribe(self, topic: str, revision: int | None = None) -> None:
@@ -114,6 +120,7 @@ class MqttAdapter:
     def _connection_changed(self, connected: bool) -> None:
         self._connected = connected
         if not connected:
+            self.reports.reset()
             self._session += 1
             self._bridge_online = False
             self._active = False
@@ -136,11 +143,14 @@ class MqttAdapter:
     async def resync(self) -> None:
         """Drop all evidence and subscriptions, then re-read retained catalogs.
 
-        Nothing is published; control stays revoked until explicitly re-enabled.
+        No device commands are published; an opted-in report metadata handshake
+        may be sent. Control stays revoked until explicitly re-enabled.
         """
         if self._closed:
             raise RuntimeError("adapter closed")
+        self.last_error = None
         self._session += 1
+        self.reports.reset()
         self._bridge_online = False
         self._active = False
         self.topology.update_devices([])
@@ -160,6 +170,8 @@ class MqttAdapter:
 
     async def _resubscribe(self) -> None:
         session = self._session
+        if self._config.report_extension:
+            await self._subscribe(f"{self._config.base_topic}/orchestrator/report")
         for suffix in ("state", "devices", "groups", "event"):
             if self._closed or session != self._session:
                 return
@@ -183,6 +195,7 @@ class MqttAdapter:
                 was_online = self._bridge_online
                 self._bridge_online = data["state"] == "online"
                 if not self._bridge_online:
+                    self.reports.reset()
                     self._active = False
                     self.topology.update_devices([])
                     self._topology_changed()
@@ -205,6 +218,36 @@ class MqttAdapter:
                         else EvidenceQuality.UNKNOWN_SOURCE,
                     )
                 )
+                if (
+                    self._bridge_online
+                    and not was_online
+                    and self._config.report_extension
+                ):
+                    self.reports.reset()
+                    await mqtt.async_publish(
+                        self._hass,
+                        f"{self._config.base_topic}/orchestrator/subscribe",
+                        json.dumps(self.reports.request()),
+                        retain=False,
+                    )
+            elif message.topic == f"{self._config.base_topic}/orchestrator/report":
+                if self._config.report_extension and self._bridge_online:
+                    was_broken = self.reports.broken
+                    for observation in self.reports.ingest(
+                        data, retained=message.retain, now=self._now()
+                    ):
+                        self._emit(observation)
+                    if self.reports.broken and not was_broken:
+                        self.last_error = "report_sequence_gap; resync required"
+                        self._active = False
+                        self._emit(
+                            BridgeObservation(
+                                False,
+                                self._now(),
+                                False,
+                                EvidenceQuality.UNKNOWN_SOURCE,
+                            )
+                        )
             elif message.topic == prefix + "devices":
                 self._updating += 1
                 self._devices_revision += 1
@@ -219,7 +262,11 @@ class MqttAdapter:
                         self.topology.update_groups(pending)
                         self._topology_changed()
                     for topic in list(self._subscriptions):
-                        if not topic.startswith(prefix):
+                        if (
+                            not topic.startswith(prefix)
+                            and topic
+                            != f"{self._config.base_topic}/orchestrator/report"
+                        ):
                             self._subscriptions.pop(topic)()
                     addresses = set()
                     for config in (*self._config.relay_channels, *self._config.lights):
@@ -272,6 +319,9 @@ class MqttAdapter:
             _LOGGER.warning("Ignoring MQTT message: %s", exc)
 
     def _device_message(self, message: mqtt.ReceiveMessage, data: object) -> None:
+        if self._config.report_extension:
+            # Merged normal states cannot overwrite raw per-attribute evidence.
+            return
         if not isinstance(data, dict):
             raise TypeError("device payload must be an object")
         quality = (
@@ -380,16 +430,37 @@ class MqttAdapter:
                 continue
         if topic not in allowed:
             raise RuntimeError("unknown or stale command topic")
-        await mqtt.async_publish(
-            self._hass,
-            topic,
-            json.dumps(payload, separators=(",", ":"), allow_nan=False),
-            retain=False,
-        )
+        affected = set()
+        for light in self._config.lights:
+            try:
+                if (
+                    self.topology.resolve_device(light.device_ieee).topic + "/set"
+                    == topic
+                ):
+                    affected.add(light.id)
+            except KeyError:
+                continue
+        for group in self._config.groups:
+            try:
+                if self.topology.resolve_group(group.z2m_id).topic + "/set" == topic:
+                    affected.update(group.members)
+            except KeyError:
+                continue
+        try:
+            await mqtt.async_publish(
+                self._hass,
+                topic,
+                json.dumps(payload, separators=(",", ":"), allow_nan=False),
+                retain=False,
+            )
+        finally:
+            # Reports that arrived before completion cannot confirm this send.
+            self.reports.invalidate_leds(tuple(affected))
 
     async def close(self) -> None:
         self._closed = True
         self._session += 1
+        self.reports.reset()
         self._active = False
         tasks = tuple(self._tasks)
         for task in tasks:

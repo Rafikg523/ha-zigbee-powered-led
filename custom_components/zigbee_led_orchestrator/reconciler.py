@@ -151,6 +151,7 @@ class Reconciler:
         self._interrupted_on: dict[str, InFlightCommand] = {}
         self._gates: dict[str, tuple[GroupGate, int]] = {}
         self._last_relay: dict[str, SwitchState] = {}
+        self._last_led_publish: dict[str, tuple[str, float]] = {}
         self._capabilities: dict[str, LightCapabilities] = {}
         self._sequence = count()
         self._arbiter = CommandArbiter(
@@ -177,6 +178,12 @@ class Reconciler:
             request.kind,
             [token.generation for token in request.tokens],
         )
+        if request.kind in (CommandKind.LED_SET, CommandKind.GROUP_SET):
+            for token in request.tokens:
+                self._last_led_publish[token.light_id] = (
+                    request.operation_id,
+                    float("inf"),
+                )
         if request.kind not in (CommandKind.RELAY_ON, CommandKind.RELAY_OFF):
             return
         token = request.tokens[0]
@@ -248,6 +255,29 @@ class Reconciler:
         if self._desired.get(light_id).on:
             raise RuntimeError("cannot change capabilities while light is requested on")
         self._capabilities[light_id] = capabilities
+
+    def _led_matches(self, item, desired, observed) -> bool:
+        published = self._last_led_publish.get(item)
+        return (
+            observed.led_state == SwitchState.ON
+            and observed.led_quality == EvidenceQuality.DEVICE_REPORT
+            and observed.led_retained is False
+            and observed.led_received_at is not None
+            and (published is None or observed.led_received_at > published[1])
+            and self._matches_parameters(item, desired, observed)
+        )
+
+    async def _send_request(self, request: SendRequest) -> SendResult:
+        result = await self._arbiter.send(request)
+        if result.status == SendStatus.SENT:
+            for token in request.tokens:
+                published = self._last_led_publish.get(token.light_id)
+                if published is not None and published[0] == request.operation_id:
+                    self._last_led_publish[token.light_id] = (
+                        request.operation_id,
+                        self._clock.now(),
+                    )
+        return result
 
     def _matches_parameters(self, item, desired, observed) -> bool:
         capabilities = self._capabilities.get(item)
@@ -587,7 +617,7 @@ class Reconciler:
             phase == Phase.ON
             and desired.on
             and effective == EffectiveState.ON_REPORTED
-            and self._matches_parameters(light_id, desired, observed)
+            and self._led_matches(light_id, desired, observed)
         )
         return LightSnapshot(
             desired,
@@ -671,7 +701,7 @@ class Reconciler:
             kind=kind,
             topology_version=self._topology_version,
         )
-        task = asyncio.create_task(self._arbiter.send(request))
+        task = asyncio.create_task(self._send_request(request))
         self._sends.add(task)
         task.add_done_callback(self._sends.discard)
         return task
@@ -913,10 +943,7 @@ class Reconciler:
             decision = await registration[0].arrive(
                 item,
                 generation,
-                not (
-                    obs.led_state == SwitchState.ON
-                    and self._matches_parameters(item, target, obs)
-                ),
+                not self._led_matches(item, target, obs),
             )
             if not self._current(item, generation):
                 return
@@ -936,9 +963,7 @@ class Reconciler:
                 return
             target = self._desired.get(item)
             obs = self._observations.snapshot(item)
-        if obs.led_state == SwitchState.ON and self._matches_parameters(
-            item, target, obs
-        ):
+        if self._led_matches(item, target, obs):
             self._phase(item, Phase.ON)
             return
         payload = self.led_payload(item)
@@ -1019,7 +1044,7 @@ class Reconciler:
             kind=CommandKind.GROUP_SET,
             topology_version=self._topology_version,
         )
-        task = asyncio.create_task(self._arbiter.send(request))
+        task = asyncio.create_task(self._send_request(request))
         self._sends.add(task)
         task.add_done_callback(self._sends.discard)
         return task
