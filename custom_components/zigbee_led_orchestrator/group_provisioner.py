@@ -14,7 +14,7 @@ from .models import GroupConfig
 
 SUFFIX = "_orchestrator"
 MIN_GROUP_ID = 1
-MAX_GROUP_ID = 254
+MAX_GROUP_ID = 65535
 
 
 def normalize_group_name(value: object) -> str:
@@ -120,7 +120,7 @@ def _one(
     if len(owned) > 1:
         return None
     if not owned:
-        if friendly not in pending and friendly not in options_ready:
+        if friendly not in pending:
             used = {item.z2m_id for item in catalog}
             used.update(pending.values())
             return BridgeAction(
@@ -183,7 +183,7 @@ def next_group_action(
     waiting = pending or {}
     for group in groups:
         if not set(group.members) <= set(lights):
-            return None
+            continue
         action = _one(group, lights, catalog, powered, options_ready, waiting)
         if action is not None:
             return action

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3 — wiele grup i obwodów
+
+- Dowolna liczba niezależnych grup i obwodów w jednym wpisie integracji; grupa może mieć jednego lub więcej członków. Przekaźniki jednokanałowe z polem `state` są akceptowane. Przydział identyfikatorów grup nie kończy się na 254.
+- Synchronizacja składu używa osobnych, nieretained wskazówek zasilania także przy włączonym rozszerzeniu. Te dane nigdy nie dowodzą gotowości ani nie dopuszczają LED `/set`. Retained/cache nie pozwalają dodawać członków.
+- Brak urządzenia lub odmowa jednej grupy nie zatrzymuje synchronizacji pozostałych. Utracone potwierdzenia i odmowy mają odstęp przed kolejnym uzgodnieniem katalogu. Powrót mostka wznawia synchronizację, bez odtwarzania ON.
+- Nowa konfiguracja odrzuca nazwę istniejącej grupy Z2M. Edycja chroni zapisany identyfikator, a przerwana operacja blokuje również nowych członków po restarcie.
+- Testy obejmują 5 grup po 10 obwodów, rzeczywiste publikacje niezależnych grup przy awarii sąsiedniej, synchronizację 50 członków i restart. Poprawiono porównanie granicy czasu rozruchu, które mogło opóźniać wysyłkę do timeoutu.
+
+
 ## 0.3.2 — nazwa nowego obwodu kończy się na _orchestrator
 
 - Przy dodawaniu obwodu nazwa dostaje końcówkę `_orchestrator`. `Kuchnia` zapisuje encję `Kuchnia_orchestrator`. Wpisanie `Kuchnia_orchestrator` nie podwaja końcówki. Ta sama nazwa, już z końcówką albo bez niej, jest odrzucana jako zajęta.

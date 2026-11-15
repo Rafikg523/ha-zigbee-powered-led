@@ -290,6 +290,7 @@ class OrchestratorGroupLight(LightEntity):
     def extra_state_attributes(self) -> dict[str, object]:
         snapshot = self._runtime.group_snapshot(self._group_id)
         return {
+            "members": list(self._members),
             "confirmed_members": snapshot.confirmed_members,
             "member_count": snapshot.member_count,
             "confirmed": snapshot.confirmed,

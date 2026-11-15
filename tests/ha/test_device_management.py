@@ -1,5 +1,7 @@
 """Circuits and groups as devices: listing, deleting and editing them."""
 
+import copy
+
 import pytest
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
@@ -30,7 +32,23 @@ class BridgeAdapter(FakeAdapter):
 
     async def request_bridge(self, path, payload):
         self.requests.append((path, payload))
-        return self.response
+        if self.response.get("status") != "ok":
+            return self.response
+        if path == "group/options":
+            return {"status": "ok", "data": {"to": payload["options"]}}
+        if path == "group/remove":
+            self.topology.update_groups([])
+            if self.topology_callback:
+                self.topology_callback(self.topology.version)
+            return {"status": "ok", "data": {"id": payload["id"], "force": False}}
+        if path == "group/rename":
+            group = copy.deepcopy(GROUP)
+            group["friendly_name"] = payload["to"]
+            self.topology.update_groups([group])
+            if self.topology_callback:
+                self.topology_callback(self.topology.version)
+            return {"status": "ok", "data": payload}
+        pytest.fail(f"Unexpected bridge request: {path}")
 
 
 @pytest.fixture
@@ -61,6 +79,21 @@ async def loaded(hass, mqtt_mock, adapters, enable_custom_integrations):
     )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    from custom_components.zigbee_led_orchestrator.models import (
+        BridgeObservation,
+        EvidenceQuality,
+    )
+
+    adapters[0].observation(
+        BridgeObservation(
+            True, entry.runtime_data._clock.now(), False, EvidenceQuality.UNKNOWN_SOURCE
+        )
+    )
+    await hass.async_block_till_done()
+    task = entry.runtime_data._provision_task
+    if task is not None:
+        await task
+    adapters[0].requests.clear()
     yield entry
     await hass.config_entries.async_unload(entry.entry_id)
     mqtt_entry = hass.config_entries.async_entries("mqtt")[0]
@@ -146,7 +179,7 @@ async def test_group_delete_waits_for_zigbee2mqtt_then_drops_it(
     )
     response = await client.receive_json()
     assert response["success"]
-    assert adapters[0].requests == [("group/remove", {"id": "group_a_orchestrator"})]
+    assert adapters[0].requests == [("group/remove", {"id": 1})]
     assert entry.data["groups"] == []
     assert entry.data["rooms"] == []
     assert len(entry.data["lights"]) == 2
@@ -171,10 +204,9 @@ async def test_refused_group_delete_changes_nothing(hass, loaded, adapters):
         await async_remove_config_entry_device(
             hass, entry, _device(hass, entry, "group_a")
         )
-    assert caught.value.translation_key == "group_remove_failed"
-    assert caught.value.translation_placeholders == {"error": "device did not respond"}
+    assert "rejected" in str(caught.value)
     assert entry.data == valid_config()
-    assert not entry.runtime_data._held_groups
+    assert entry.options["pending_group_operation"]["action"] == "remove"
 
 
 async def test_free_circuit_delete_drops_its_relay_channel(hass, loaded, monkeypatch):
@@ -285,7 +317,7 @@ async def _options(hass, entry, monkeypatch, step, choice):
     return flow, await getattr(flow, f"async_step_{step}")(choice)
 
 
-async def test_edit_circuit_keeps_ids_and_refuses_remapping_a_grouped_one(
+async def test_edit_circuit_keeps_ids_when_relay_mapping_changes(
     hass, loaded, monkeypatch
 ):
     entry = loaded
@@ -306,7 +338,8 @@ async def test_edit_circuit_keeps_ids_and_refuses_remapping_a_grouped_one(
             "relay": "0x0000000000000004|1|state_l3",
         }
     )
-    assert moved["errors"] == {"base": "circuit_in_group"}
+    assert moved["type"] == "create_entry"
+    assert entry.data["relay_channels"][0]["state_key"] == "state_l3"
     renamed = await flow.async_step_circuit_details(
         {
             "name": "Kuchnia",
@@ -366,7 +399,7 @@ async def test_edit_group_renames_it_in_zigbee2mqtt(
         hass, entry, monkeypatch, "edit_group", {"group": "group_a"}
     )
     assert form["step_id"] == "group_details"
-    one = await flow.async_step_group_details({"name": "Salon", "members": ["light_a"]})
+    one = await flow.async_step_group_details({"name": "Salon", "members": []})
     assert one["errors"] == {"base": "need_two_members"}
     assert not adapters[0].requests
     result = await flow.async_step_group_details(
@@ -389,34 +422,31 @@ async def test_failed_group_rename_keeps_the_entry(hass, loaded, adapters, monke
     result = await flow.async_step_group_details(
         {"name": "Salon", "members": ["light_a", "light_b"]}
     )
-    assert result["errors"] == {"base": "group_rename_failed"}
+    assert result["errors"] == {"base": "group_operation_failed"}
     assert entry.data == valid_config()
 
 
-async def test_held_group_is_not_recreated_and_a_timeout_keeps_the_hold(monkeypatch):
+async def test_pending_group_operation_prevents_automatic_recreation():
     import asyncio
 
-    from custom_components.zigbee_led_orchestrator import runtime as module
-    from custom_components.zigbee_led_orchestrator.configuration import (
-        validate_config,
+    from custom_components.zigbee_led_orchestrator.configuration import validate_config
+    from custom_components.zigbee_led_orchestrator.models import (
+        BridgeObservation,
+        EvidenceQuality,
     )
+    from custom_components.zigbee_led_orchestrator.runtime import Runtime
 
     adapter = BridgeAdapter()
     adapter.topology.update_groups([])
-    instance = module.Runtime(validate_config(valid_config()), adapter)
+    instance = Runtime(
+        validate_config(valid_config()), adapter, management_pending="group_a"
+    )
     await instance.start()
-    assert instance._plan_action().path == "group/add"
-    adapter.response = {"status": "error", "error": "busy"}
-    with pytest.raises(RuntimeError, match="busy"):
-        await instance.change_group("group_a", "group/remove", {"id": "x"})
-    assert instance._plan_action().path == "group/add"
-
-    async def silent(path, payload):
-        await asyncio.Event().wait()
-
-    adapter.request_bridge = silent
-    monkeypatch.setattr(module, "GROUP_CHANGE_TIMEOUT_S", 0.01)
-    with pytest.raises(TimeoutError):
-        await instance.change_group("group_a", "group/remove", {"id": "x"})
-    assert instance._plan_action() is None
-    await instance.close()
+    try:
+        adapter.observation(
+            BridgeObservation(True, 1, False, EvidenceQuality.UNKNOWN_SOURCE)
+        )
+        await asyncio.sleep(0)
+        assert adapter.requests == []
+    finally:
+        await instance.close()

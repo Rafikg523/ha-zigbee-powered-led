@@ -145,3 +145,27 @@ def test_stored_binding_updates_only_the_orchestrator_id():
     assert updated[0]["z2m_id"] == 2
     assert updated[1] == original[1]
     assert original[0]["z2m_id"] == 1
+
+
+def test_allocator_does_not_stop_at_254_groups():
+    catalog = tuple(CatalogGroup(i, f"manual_{i}", frozenset()) for i in range(1, 255))
+    action = next_group_action(groups(), LIGHTS, catalog, frozenset(), frozenset())
+    assert action.payload == {"friendly_name": "Salon_orchestrator", "id": 255}
+
+
+def test_absent_member_in_first_group_does_not_block_next_group():
+    from dataclasses import replace
+
+    first = groups()[0]
+    second = replace(first, id="other", name="Desk", members=("light_b",))
+    action = next_group_action(
+        (first, second), {"light_b": LIGHTS["light_b"]}, (), frozenset(), frozenset()
+    )
+    assert action.payload == {"friendly_name": "Desk_orchestrator", "id": 1}
+
+
+def test_deleted_managed_group_is_recreated_even_if_old_options_were_ready():
+    action = next_group_action(
+        groups(), LIGHTS, (), frozenset(), frozenset({"Salon_orchestrator"})
+    )
+    assert action.path == "group/add"

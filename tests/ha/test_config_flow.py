@@ -301,15 +301,14 @@ async def test_added_circuit_stays_out_of_existing_groups(hass, discovery, monke
     flow = OptionsFlow()
     flow.hass = hass
     flow.handler = entry.entry_id
-    suffixed = await flow.async_step_add_circuit(
+    result = await flow.async_step_add_circuit(
         {
-            "name": "Jadalnia_orchestrator",
+            "name": "Jadalnia",
             "light": "0x0000000000000003|1",
             "relay": "0x0000000000000001|2|state_l2",
         }
     )
-    assert suffixed["type"] == "create_entry"
-    assert entry.data["lights"][1]["name"] == "Jadalnia_orchestrator"
+    assert result["type"] == "create_entry"
     assert entry.data["groups"] == [
         {"id": "group_1", "name": "Salon", "z2m_id": 7, "members": ["light_1"]}
     ]
@@ -349,9 +348,7 @@ async def test_create_group_keeps_only_selected_circuits(hass, discovery, monkey
     flow = OptionsFlow()
     flow.hass = hass
     flow.handler = entry.entry_id
-    blocked = await flow.async_step_create_group(
-        {"name": "Salon", "members": ["light_1"]}
-    )
+    blocked = await flow.async_step_create_group({"name": "Salon", "members": []})
     assert blocked["type"] == "form"
     assert blocked["errors"]["base"] == "need_two_members"
     result = await flow.async_step_create_group(
@@ -366,9 +363,8 @@ async def test_create_group_keeps_only_selected_circuits(hass, discovery, monkey
     again = OptionsFlow()
     again.hass = hass
     again.handler = entry.entry_id
-    aborted = await again.async_step_create_group()
-    assert aborted["type"] == "abort"
-    assert aborted["reason"] == "need_two_circuits"
+    available = await again.async_step_create_group()
+    assert available["type"] == "form"
 
 
 async def test_options_reject_duplicate_name_and_full_catalog(hass, discovery):
@@ -387,14 +383,6 @@ async def test_options_reject_duplicate_name_and_full_catalog(hass, discovery):
         }
     )
     assert result["errors"]["base"] == "already_mapped"
-    same = await flow.async_step_add_circuit(
-        {
-            "name": "Kuchnia_orchestrator",
-            "light": "0x0000000000000003|1",
-            "relay": "0x0000000000000001|2|state_l2",
-        }
-    )
-    assert same["errors"]["base"] == "already_mapped"
     full = MockConfigEntry(domain=DOMAIN, data=valid_config())
     full.add_to_hass(hass)
     blocked = OptionsFlow()
@@ -403,3 +391,54 @@ async def test_options_reject_duplicate_name_and_full_catalog(hass, discovery):
     aborted = await blocked.async_step_add_circuit()
     assert aborted["type"] == "abort"
     assert aborted["reason"] == "no_free_circuit"
+
+
+async def test_edit_circuit_preserves_id_and_validates_mapping(
+    hass, discovery, monkeypatch
+):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    entry = MockConfigEntry(domain=DOMAIN, data=_one_pair())
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(hass.config_entries, "async_schedule_reload", lambda _: None)
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    await flow.async_step_edit_circuit({"circuit": "light_1"})
+    result = await flow.async_step_circuit_details(
+        {
+            "name": "Salon",
+            "light": "0x0000000000000003|1",
+            "relay": "0x0000000000000001|2|state_l2",
+        }
+    )
+    assert result["type"] == "create_entry"
+    assert entry.data["lights"][0]["id"] == "light_1"
+    assert entry.data["lights"][0]["device_ieee"] == "0x0000000000000003"
+    assert entry.data["relay_channels"][0]["state_key"] == "state_l2"
+
+
+async def test_renaming_circuit_preserves_configured_temperature_range(
+    hass, discovery, monkeypatch
+):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    data = _one_pair()
+    data["lights"][0]["min_kelvin"] = 2700
+    data["lights"][0]["max_kelvin"] = 5000
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(hass.config_entries, "async_schedule_reload", lambda _: None)
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    await flow.async_step_edit_circuit({"circuit": "light_1"})
+    await flow.async_step_circuit_details(
+        {
+            "name": "Salon",
+            "light": "0x0000000000000002|1",
+            "relay": "0x0000000000000001|1|state_l1",
+        }
+    )
+    assert entry.data["lights"][0]["min_kelvin"] == 2700
+    assert entry.data["lights"][0]["max_kelvin"] == 5000

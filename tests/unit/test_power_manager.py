@@ -32,6 +32,16 @@ def test_ready_requires_boot_interval_and_current_device_report():
     assert is_ready(item, now=12.5, boot_grace_seconds=2.5)
 
 
+def test_readiness_uses_the_same_deadline_as_the_boot_timer():
+    item = replace(
+        observation(),
+        relay_received_at=1.01,
+        power_started_at=1.01,
+        led_received_at=1.02,
+    )
+    assert is_ready(item, now=2.01, boot_grace_seconds=1)
+
+
 def test_cached_or_unverifiable_evidence_never_proves_readiness():
     item = observation()
     for change in (

@@ -114,6 +114,7 @@ def test_group_is_on_when_any_member_is_requested_on(group):
 def test_group_attributes_report_member_confirmation_separately(group):
     entity, _ = group
     assert entity.extra_state_attributes == {
+        "members": ["light_a", "light_b"],
         "confirmed_members": 0,
         "member_count": 2,
         "confirmed": False,

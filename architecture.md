@@ -77,9 +77,15 @@ Schemat jest **docelowy**: nie wszystkie połączenia w kodzie już istnieją. G
 
 ## Grupy i niezależność obwodów
 
+Bieżąca poprawka N/M usuwa ograniczenia pilotażu w konfiguracji: jeden wpis HA mieści wiele niezależnych grup i dowolną liczbę obwodów z osobnymi przekaźnikami, bez kopiowania silnika. Grupa ma przynajmniej jednego członka; obwód należy najwyżej do jednej grupy. Testy sprawdzają 5 grup po 10 obwodów, synchronizację przez adapter oraz niezależne publikacje przy niegotowej sąsiedniej grupie. Liczba rzeczywistych grup i członków pozostaje ograniczona możliwościami Zigbee/Z2M i urządzeń.
+
+Adapter przechowuje osobne `relay_power_hints` wyłącznie do administracyjnego uzgadniania członkostwa. Nieretained stan ON może uruchomić próbę `group/members/add` bez oczekiwania na surowy DEVICE_REPORT, również przy `report_extension=true`. Nie trafia wtedy do magazynu surowych obserwacji ani do bariery gotowości `/set`. Offline, reconnect i resync czyszczą wskazówki. Komendy świetlne nadal wymagają aktualnych raportów przekaźnika i LED-a oraz czasu rozruchu. Zasilanie nigdy nie jest włączane dla samej synchronizacji.
+
+Nieobecny kontroler pomija swoją grupę w planie utrzymania, pozostawiając pozostałe grupy. Odrzucona lub niepotwierdzona operacja administracyjna czeka 10 sekund przed ponownym uzgodnieniem; inne grupy mogą w tym czasie postępować. Członkostwo potwierdza katalog, nie sama odpowiedź MQTT. Powrót mostka uruchamia synchronizację. Zamknięcie runtime usuwa również zadanie oczekiwania na ponowienie. Operacje `/set` nie są w ten sposób ponawiane.
+
 Docelowo wspólne ON/brightness/CCT jest wysyłane do grupy Zigbee2MQTT tylko, gdy skład został zweryfikowany, wszyscy faktyczni odbiorcy powinni otrzymać polecenie i spełniono barierę gotowości. Odpowiedź grupowa nie jest potwierdzeniem każdego członka. Timeout ma pozwolić na bezpieczną częściową degradację bez niezamierzonego sterowania innymi urządzeniami.
 
-W MVP plan obejmuje dwie lampy i jedną grupę z dedykowanymi kanałami. Trzy grupy, pomieszczenia, nakładające się członkostwo i lampy stale zasilane zaplanowano jako kolejne etapy. Niezależne zasoby nie powinny czekać na pełny rozruch innego obwodu. Obecny plan MVP dopuszcza jednego aktywnego arbitra w procesie HA; nie jest to jeszcze obsługa wielu niezależnych instalacji Z2M.
+Historyczny pilotaż obejmował dwie lampy i jedną grupę z dedykowanymi kanałami. Bieżący kod obsługuje wiele niezależnych grup; pomieszczenia, nakładające się członkostwo i lampy stale zasilane pozostają kolejnymi etapami. Niezależne zasoby nie czekają na pełny rozruch innego obwodu. Jeden aktywny arbiter obsługuje wspólny wpis HA i instalację Z2M; wiele grup nie wymaga wielu wpisów integracji.
 
 ### Preferencje, pauza i resync (P12)
 
@@ -134,3 +140,11 @@ Na jawne zlecenie użytkownika zmieniono wcześniejszy kontrakt bezpośredniego 
 Etap LED ma łączny limit `verification_timeout_ms` (domyślnie 2000 ms), obejmujący publikację i odczyt. Brak dowodu lub błąd LED nie uniemożliwia odcięcia przekaźnika. Po potwierdzonym odcięciu faza to OFF, a reason może zawierać `led_off_confirmation_timeout` lub `led_off_failed`; potwierdzenie OFF dotyczy zasilania, nie zapamiętania OFF w firmware. Bez zasilania lub kanału surowych raportów stosowane jest bezpośrednie RELAY_OFF.
 
 Zmiany samych parametrów podczas wyłączania współdzielą rozpoczęte LED OFF i pierwotny deadline. Nowe ON unieważnia przyszłe stare odcięcie; nadanej komendy LED OFF nie można cofnąć. Fizyczny przycisk nadal odcina zasilanie niezależnie i nigdy nie jest automatycznie cofany. Integracja nie zmienia `do_not_disturb`; eliminacja błysku po przywróceniu napięcia zależy od zachowania firmware i wymaga próby sprzętowej.
+
+## Zarządzanie urządzeniami (0.3.0)
+
+Każdy obwód i grupa mają osobne DeviceInfo z tożsamością config entry + logical id. Sensory obwodu należą do tego samego urządzenia co światło; istniejące unique_id, entity_id i nazwy użytkownika pozostają zachowane. Opcje udostępniają edycję obwodów i grup oraz jawne wznowienie zapisanej operacji. Usunięte logical ids są rezerwowane w opcjach, aby nowe zasoby nie odziedziczyły starych encji.
+
+`group_management.py` serializuje edycję i zmianę mapowania członka przez ten sam lock co usuwanie grupy. Przed zapisem sprawdza całą konfigurację i topologię. Dziennik w options przechowuje cel, kroki potwierdzone, krok o nieznanym wyniku i ewentualne nowe mapowanie. Konfiguracja przechodzi na nową dopiero po odpowiedziach Z2M i dokładnym katalogu. Jawne operacje członkostwa nie wymagają wcześniejszego raportu zasilania: niedostępne urządzenie może spowodować odmowę Z2M, a integracja nie włącza zasilania. Tło provisioning nadal wymaga dowodów zasilania.
+
+Rozpoczęcie operacji unieważnia poprzednie intencje i blokuje sterowanie grupą oraz jej członkami; provisioning grup jest wstrzymany do przeładowania. Po restarcie dziennik odtwarza blokadę, bez wykonywania żądań. Interfejs odzyskiwania wymaga jawnego potwierdzenia, że operator sprawdził grupę i Z2M zakończyło poprzednie żądania (restart Z2M przy nieznanym wyniku). Dopiero wtedy katalog może rozstrzygnąć utraconą odpowiedź: wykonany krok jest przyjmowany bez wysyłki, brakujący wymaga jawnej kontynuacji. Obcy identyfikator, nazwa lub endpointy uniemożliwiają kontynuację. Brak katalogu po rozłączeniu nie dowodzi usunięcia. Wszystkie żądania bridge są bez retain, przez MQTT HA; nie ma automatycznych ponowień ani ON przy zarządzaniu.

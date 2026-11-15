@@ -33,5 +33,5 @@ def is_ready(
         and observation.relay_received_at <= now
         and led_at is not None
         and relay_at < led_at <= now
-        and now - relay_at >= boot_grace_seconds
+        and now >= relay_at + boot_grace_seconds
     )

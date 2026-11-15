@@ -47,6 +47,53 @@ async def test_setup_is_observe_only_and_unload_cleans_runtime(
     assert mocked_adapter[0].topology_callback is None
 
 
+async def test_setup_ignores_obsolete_control_mode_option(
+    hass, mocked_adapter, monkeypatch
+):
+    from custom_components.zigbee_led_orchestrator import (
+        async_setup_entry,
+        async_unload_entry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=valid_config(), options={"active": False}
+    )
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(hass.config_entries, "async_forward_entry_setups", AsyncMock())
+    monkeypatch.setattr(
+        hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)
+    )
+    assert await async_setup_entry(hass, entry)
+    entry.runtime_data._maybe_arm()
+    assert not mocked_adapter[0].active
+    assert not entry.runtime_data._user_inactive
+    assert await async_unload_entry(hass, entry)
+
+
+async def test_restart_with_pending_group_change_keeps_group_unavailable(
+    hass, mocked_adapter, monkeypatch
+):
+    from custom_components.zigbee_led_orchestrator import (
+        async_setup_entry,
+        async_unload_entry,
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=valid_config(),
+        options={"pending_group_operation": {"action": "edit", "id": "group_a"}},
+    )
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(hass.config_entries, "async_forward_entry_setups", AsyncMock())
+    monkeypatch.setattr(
+        hass.config_entries, "async_unload_platforms", AsyncMock(return_value=True)
+    )
+    assert await async_setup_entry(hass, entry)
+    assert not entry.runtime_data.group_snapshot("group_a").available
+    assert not mocked_adapter[0].sent
+    assert await async_unload_entry(hass, entry)
+
+
 async def test_second_entry_is_rejected(hass, mocked_adapter, monkeypatch):
     from custom_components.zigbee_led_orchestrator import (
         async_setup_entry,
@@ -108,6 +155,35 @@ async def test_home_assistant_creates_lights_and_unloads(
     }
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert mocked_adapter[0].closed
+    mqtt_entry = hass.config_entries.async_entries("mqtt")[0]
+    await hass.config_entries.async_unload(mqtt_entry.entry_id)
+    if mqtt_mock._mock_wraps._misc_timer is not None:
+        mqtt_mock._mock_wraps._misc_timer.cancel()
+
+
+async def test_existing_light_keeps_entity_id_and_user_name_when_device_is_added(
+    hass, mqtt_mock, mocked_adapter, enable_custom_integrations
+):
+    from homeassistant.helpers import entity_registry as er
+
+    entry = MockConfigEntry(domain=DOMAIN, data=valid_config())
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{entry.entry_id}_light_a",
+        config_entry=entry,
+        suggested_object_id="custom_old_light",
+    )
+    registry.async_update_entity(old.entity_id, name="My custom name")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    current = registry.async_get(old.entity_id)
+    assert current is not None
+    assert current.name == "My custom name"
+    assert current.device_id is not None
+    assert await hass.config_entries.async_unload(entry.entry_id)
     mqtt_entry = hass.config_entries.async_entries("mqtt")[0]
     await hass.config_entries.async_unload(mqtt_entry.entry_id)
     if mqtt_mock._mock_wraps._misc_timer is not None:
