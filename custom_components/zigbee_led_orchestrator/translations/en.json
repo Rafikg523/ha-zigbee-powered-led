@@ -38,7 +38,7 @@
       },
       "add_circuit": {
         "title": "Add circuit",
-        "description": "Name the virtual light and select one controller with its power channel. This does not add the circuit to a group. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
+        "description": "Name the virtual light and select one controller with its power channel. A name such as Kitchen creates the light entity Kitchen_orchestrator. Typing the suffix again does not double it. This does not add the circuit to a group. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "data": {
           "name": "Virtual entity name",
           "light": "LED controller and endpoint",

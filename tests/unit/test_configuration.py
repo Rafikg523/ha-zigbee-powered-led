@@ -167,6 +167,22 @@ class TestConfiguration(unittest.TestCase):
         self.assertEqual(result.lights[0].name, "Light A")
         self.assertEqual(result.lights[1].name, "Light B")
 
+    def test_new_circuit_name_ends_with_orchestrator(self):
+        from custom_components.zigbee_led_orchestrator.configuration import (
+            circuit_entity_name,
+        )
+
+        self.assertEqual(circuit_entity_name("Kuchnia"), "Kuchnia_orchestrator")
+        self.assertEqual(
+            circuit_entity_name("Kuchnia_orchestrator"), "Kuchnia_orchestrator"
+        )
+        self.assertEqual(
+            circuit_entity_name("Kuchnia _orchestrator"), "Kuchnia_orchestrator"
+        )
+        for value in ("", "  ", " Kuchnia", "_orchestrator", " _orchestrator"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                circuit_entity_name(value)
+
     def test_explicit_name_is_kept(self):
         config = valid_config()
         config["lights"][0]["name"] = "Kuchnia"

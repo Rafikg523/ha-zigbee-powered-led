@@ -13,7 +13,7 @@ from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from .configuration import circuit_label, validate_config
+from .configuration import circuit_entity_name, circuit_label, validate_config
 from .const import DOMAIN
 from .group_provisioner import normalize_group_name, z2m_group_name
 from .light_capabilities import LightCapabilities
@@ -96,7 +96,23 @@ def _require_name(value: object) -> str:
         raise ValueError(
             "name must be a nonempty string without surrounding whitespace"
         )
+    return circuit_entity_name(value, path="name")
+
+
+def _edited_name(value: object) -> str:
+    """Keep an edited label as typed. Only a new circuit gains the suffix."""
+    if value is None:
+        raise ValueError(
+            "name must be a nonempty string without surrounding whitespace"
+        )
     return circuit_label("circuit", value, path="name")
+
+
+def _name_key(name: str) -> str:
+    try:
+        return circuit_entity_name(name)
+    except ValueError:
+        return name
 
 
 def _split_light(token: object) -> tuple[str, int]:
@@ -119,8 +135,9 @@ def _stored_label(light: dict) -> str:
 
 def _pair_taken(data: dict, name: str, light: tuple[str, int], relay: tuple) -> bool:
     ieee, endpoint = light
+    wanted = _name_key(name)
     for item in data.get("lights", []):
-        if _stored_label(item) == name:
+        if _name_key(_stored_label(item)) == wanted:
             return True
         if item["device_ieee"].lower() == ieee and int(item["endpoint"]) == endpoint:
             return True
@@ -542,7 +559,7 @@ class OptionsFlow(config_entries.OptionsFlow):
         relay_options.setdefault(relay_token, relay_token)
         if user_input is not None:
             try:
-                name = _require_name(user_input.get("name"))
+                name = _edited_name(user_input.get("name"))
             except ValueError:
                 errors["base"] = "invalid_name"
             else:

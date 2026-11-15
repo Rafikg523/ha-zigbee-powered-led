@@ -60,7 +60,7 @@ async def test_configure_one_light_and_infer_temperature(hass, flow, monkeypatch
     )
     assert result["type"] == "create_entry"
     assert entry.data["groups"] == []
-    assert entry.data["lights"][0]["name"] == "Kuchnia"
+    assert entry.data["lights"][0]["name"] == "Kuchnia_orchestrator"
     assert entry.data["lights"][0]["min_kelvin"] == 2000
     assert entry.data["lights"][0]["max_kelvin"] == 6536
 
