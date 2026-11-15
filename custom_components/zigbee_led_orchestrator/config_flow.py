@@ -11,6 +11,11 @@ from homeassistant import config_entries
 from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .configuration import circuit_entity_name, circuit_label, validate_config
 from .const import DOMAIN
@@ -240,6 +245,48 @@ def _catalog_choices(catalog: Topology, data: dict) -> tuple[dict, dict]:
     return light_options, relay_options
 
 
+def _visible_choices(options: dict[str, str]) -> dict[str, str]:
+    """Map stored device tokens to their visible, searchable labels."""
+    visible: dict[str, str] = {}
+    used: set[str] = set()
+    for token, label in options.items():
+        text = label if label not in used else f"{label} [{token}]"
+        visible[token] = text
+        used.add(text)
+    return visible
+
+
+def _filter_select(options: dict[str, str]) -> SelectSelector:
+    """Return a dropdown that Home Assistant lets the user search."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                {"value": label, "label": label}
+                for label in _visible_choices(options).values()
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+            custom_value=True,
+        )
+    )
+
+
+def _choice_token(value: object, options: dict[str, str]) -> str:
+    """Resolve a visible selection while retaining raw values from old forms."""
+    if isinstance(value, str):
+        if value in options:
+            return value
+        for token, label in _visible_choices(options).items():
+            if value == label:
+                return token
+        for split in (_split_light, _split_relay):
+            try:
+                split(value)
+            except TypeError, ValueError:
+                continue
+            return value
+    raise _FormError("unknown_choice")
+
+
 def _policy_schema(schema: dict) -> None:
     for key, default in _POLICY_DEFAULTS:
         schema[vol.Required(key, default=default)] = vol.All(
@@ -306,14 +353,21 @@ class _FormError(Exception):
         self.reason = reason
 
 
-def _circuit_fields(catalog: Topology, user_input: dict, data: dict, retired=()):
+def _circuit_fields(
+    catalog: Topology,
+    user_input: dict,
+    data: dict,
+    light_options: dict[str, str],
+    relay_options: dict[str, str],
+    retired=(),
+):
     try:
         name = _require_name(user_input.get("name"))
     except ValueError as exc:
         raise _FormError("invalid_name") from exc
     try:
-        light = _split_light(user_input["light"])
-        relay = _split_relay(user_input["relay"])
+        light = _split_light(_choice_token(user_input.get("light"), light_options))
+        relay = _split_relay(_choice_token(user_input.get("relay"), relay_options))
         if _pair_taken(data, name, light, relay):
             raise _FormError("already_mapped")
         minimum, maximum = _kelvin_range(catalog, light[0], light[1])
@@ -611,16 +665,14 @@ class OptionsFlow(config_entries.OptionsFlow):
             item for item in other["relay_channels"] if item["id"] != channel["id"]
         ]
         lights, relays = _catalog_choices(catalog, other)
+        light_labels = _visible_choices(lights)
+        relay_labels = _visible_choices(relays)
         if user_input is not None:
             try:
                 name = _edited_name(user_input.get("name"))
-                light = _split_light(user_input["light"])
-                relay = _split_relay(user_input["relay"])
-                if (
-                    user_input["light"] not in lights
-                    or user_input["relay"] not in relays
-                    or _pair_taken(other, name, light, relay)
-                ):
+                light = _split_light(_choice_token(user_input.get("light"), lights))
+                relay = _split_relay(_choice_token(user_input.get("relay"), relays))
+                if _pair_taken(other, name, light, relay):
                     raise _FormError("already_mapped")
                 group = next(
                     (
@@ -692,10 +744,10 @@ class OptionsFlow(config_entries.OptionsFlow):
                                     ): str,
                                     vol.Required(
                                         "light", default=user_input["light"]
-                                    ): vol.In(lights),
+                                    ): _filter_select(lights),
                                     vol.Required(
                                         "relay", default=user_input["relay"]
-                                    ): vol.In(relays),
+                                    ): _filter_select(relays),
                                 }
                             ),
                             errors={"base": "group_operation_failed"},
@@ -719,12 +771,17 @@ class OptionsFlow(config_entries.OptionsFlow):
             {
                 vol.Required("name", default=_stored_label(original)): str,
                 vol.Required(
-                    "light", default=f"{original['device_ieee']}|{original['endpoint']}"
-                ): vol.In(lights),
+                    "light",
+                    default=light_labels[
+                        f"{original['device_ieee']}|{original['endpoint']}"
+                    ],
+                ): _filter_select(lights),
                 vol.Required(
                     "relay",
-                    default=f"{channel['device_ieee']}|{channel['endpoint']}|{channel['state_key']}",
-                ): vol.In(relays),
+                    default=relay_labels[
+                        f"{channel['device_ieee']}|{channel['endpoint']}|{channel['state_key']}"
+                    ],
+                ): _filter_select(relays),
             }
         )
         return self.async_show_form(
@@ -755,6 +812,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                         self._catalog,
                         user_input,
                         current,
+                        light_options,
+                        relay_options,
                         self.config_entry.options.get("retired_ids", ()),
                     )
                 )
@@ -779,8 +838,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                 )
         schema = {
             vol.Required("name"): str,
-            vol.Required("light"): vol.In(light_options),
-            vol.Required("relay"): vol.In(relay_options),
+            vol.Required("light"): _filter_select(light_options),
+            vol.Required("relay"): _filter_select(relay_options),
         }
         return self.async_show_form(
             step_id="add_circuit",

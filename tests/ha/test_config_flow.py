@@ -213,13 +213,32 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
         "light",
         "relay",
     }
-    selector = next(
+    light_selector = next(
         value
         for key, value in form["data_schema"].schema.items()
         if str(key) == "light"
     )
-    assert "0x0000000000000002|1" not in selector.container
-    assert "0x0000000000000003|1" in selector.container
+    relay_selector = next(
+        value
+        for key, value in form["data_schema"].schema.items()
+        if str(key) == "relay"
+    )
+    assert hasattr(light_selector, "config")
+    assert hasattr(relay_selector, "config")
+    assert light_selector.config["mode"] == "dropdown"
+    assert light_selector.config["custom_value"] is True
+    assert relay_selector.config["mode"] == "dropdown"
+    assert relay_selector.config["custom_value"] is True
+    light = next(
+        option["value"]
+        for option in light_selector.config["options"]
+        if "0x0000000000000003" in option["value"]
+    )
+    relay = next(
+        option["value"]
+        for option in relay_selector.config["options"]
+        if option["value"].endswith("state_l2")
+    )
     taken = await flow.async_step_add_circuit(
         {
             "name": "Salon",
@@ -232,8 +251,8 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     result = await flow.async_step_add_circuit(
         {
             "name": "Salon",
-            "light": "0x0000000000000003|1",
-            "relay": "0x0000000000000001|2|state_l2",
+            "light": light,
+            "relay": relay,
         }
     )
     assert result["type"] == "create_entry"

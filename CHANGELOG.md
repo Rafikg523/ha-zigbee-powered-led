@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4 — wyszukiwalny wybór urządzeń
+
+- Formularze dodawania i edycji obwodu pozwalają wyszukać kontroler LED lub kanał przekaźnika po wpisaniu fragmentu nazwy urządzenia. Nadal można zapisać wyłącznie pozycję z bieżącego katalogu; ręcznie wpisany, nieznany tekst jest odrzucany.
+- Zapisane adresy wyborów są dalej rozumiane, więc otwarte formularze i istniejące konfiguracje zachowują zgodność.
+
 ## 0.3.3 — wiele grup i obwodów
 
 - Dowolna liczba niezależnych grup i obwodów w jednym wpisie integracji; grupa może mieć jednego lub więcej członków. Przekaźniki jednokanałowe z polem `state` są akceptowane. Przydział identyfikatorów grup nie kończy się na 254.

@@ -328,8 +328,8 @@ async def test_edit_circuit_keeps_ids_when_relay_mapping_changes(
     defaults = {str(key): key.default() for key in form["data_schema"].schema}
     assert defaults == {
         "name": "Light A",
-        "light": "0x0000000000000002|1",
-        "relay": "0x0000000000000001|1|state_l1",
+        "light": "zigbee2mqtt/led1 — 0x0000000000000002 / 1",
+        "relay": "zigbee2mqtt/relay — 0x0000000000000001 / 1 / state_l1",
     }
     moved = await flow.async_step_circuit_details(
         {

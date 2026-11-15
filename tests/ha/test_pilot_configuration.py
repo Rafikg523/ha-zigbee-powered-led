@@ -80,8 +80,9 @@ async def test_add_circuit_only_offers_light_endpoints(hass, flow):
     form = await options.async_step_add_circuit()
     schema = form["data_schema"].schema
     selector = next(value for key, value in schema.items() if str(key) == "light")
-    assert "0x0000000000000001|1" not in selector.container
-    assert "0x0000000000000002|1" in selector.container
+    values = [option["value"] for option in selector.config["options"]]
+    assert not any("0x0000000000000001 / 1" in value for value in values)
+    assert any("0x0000000000000002 / 1" in value for value in values)
 
 
 async def test_options_remain_accessible_before_entry_is_loaded(hass):
