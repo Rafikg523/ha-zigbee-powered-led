@@ -12,6 +12,11 @@ from homeassistant import config_entries
 from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .configuration import circuit_label, validate_config
 from .const import DOMAIN
@@ -202,6 +207,60 @@ def _catalog_choices(catalog: Topology, data: dict) -> tuple[dict, dict]:
     return light_options, relay_options
 
 
+def _visible_choices(options: dict[str, str]) -> dict[str, str]:
+    """Map each stored token to the text shown in the dropdown."""
+    taken: dict[str, str] = {}
+    visible: dict[str, str] = {}
+    for token, label in options.items():
+        text = label
+        if text in taken and taken[text] != token:
+            text = f"{label} [{token}]"
+        taken[text] = token
+        visible[token] = text
+    return visible
+
+
+def _filter_select(options: dict[str, str]) -> SelectSelector:
+    """Dropdown that narrows as a name is typed.
+
+    A single-choice select is searchable only when a custom value is allowed.
+    The field therefore shows the device name, and a typed string that is not
+    one of those names is rejected. The stored address is still accepted.
+    """
+    labels = list(_visible_choices(options).values())
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[{"value": label, "label": label} for label in labels],
+            mode=SelectSelectorMode.DROPDOWN,
+            custom_value=True,
+        )
+    )
+
+
+def _stored_token(raw: str) -> bool:
+    """True when the text is an address, not a typed fragment of a name."""
+    for split in (_split_light, _split_relay):
+        try:
+            split(raw)
+        except TypeError, ValueError:
+            continue
+        else:
+            return True
+    return False
+
+
+def _choice_token(raw: object, options: dict[str, str]) -> str:
+    if isinstance(raw, str) and raw in options:
+        return raw
+    if isinstance(raw, str):
+        for token, label in _visible_choices(options).items():
+            if raw == label:
+                return token
+        if _stored_token(raw):
+            return raw
+    raise _FormError("unknown_choice")
+
+
 def _policy_schema(schema: dict) -> None:
     for key, default in _POLICY_DEFAULTS:
         schema[vol.Required(key, default=default)] = vol.All(
@@ -271,14 +330,20 @@ class _FormError(Exception):
         self.reason = reason
 
 
-def _circuit_fields(catalog: Topology, user_input: dict, data: dict):
+def _circuit_fields(
+    catalog: Topology,
+    user_input: dict,
+    data: dict,
+    light_options: dict[str, str],
+    relay_options: dict[str, str],
+):
     try:
         name = _require_name(user_input.get("name"))
     except ValueError as exc:
         raise _FormError("invalid_name") from exc
     try:
-        light = _split_light(user_input["light"])
-        relay = _split_relay(user_input["relay"])
+        light = _split_light(_choice_token(user_input.get("light"), light_options))
+        relay = _split_relay(_choice_token(user_input.get("relay"), relay_options))
         if _pair_taken(data, name, light, relay):
             raise _FormError("already_mapped")
         minimum, maximum = _kelvin_range(catalog, light[0], light[1])
@@ -406,7 +471,13 @@ class OptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             try:
                 channel, configured_light = _circuit_records(
-                    _circuit_fields(self._catalog, user_input, current)
+                    _circuit_fields(
+                        self._catalog,
+                        user_input,
+                        current,
+                        light_options,
+                        relay_options,
+                    )
                 )
                 data = copy.deepcopy(current)
                 data["relay_channels"].append(channel)
@@ -429,8 +500,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                 )
         schema = {
             vol.Required("name"): str,
-            vol.Required("light"): vol.In(light_options),
-            vol.Required("relay"): vol.In(relay_options),
+            vol.Required("light"): _filter_select(light_options),
+            vol.Required("relay"): _filter_select(relay_options),
         }
         return self.async_show_form(
             step_id="add_circuit",
@@ -546,20 +617,37 @@ class OptionsFlow(config_entries.OptionsFlow):
             except ValueError:
                 errors["base"] = "invalid_name"
             else:
-                errors.update(
-                    self._apply_circuit(
-                        current, rest, light, channel, name, user_input, light_token
+                try:
+                    chosen = dict(user_input)
+                    chosen["light"] = _choice_token(
+                        user_input.get("light"), light_options
                     )
-                )
+                    chosen["relay"] = _choice_token(
+                        user_input.get("relay"), relay_options
+                    )
+                except _FormError as exc:
+                    errors["base"] = exc.reason
+                else:
+                    errors.update(
+                        self._apply_circuit(
+                            current, rest, light, channel, name, chosen, light_token
+                        )
+                    )
                 if not errors:
                     return self._save(current)
+        light_labels = _visible_choices(light_options)
+        relay_labels = _visible_choices(relay_options)
         return self.async_show_form(
             step_id="circuit_details",
             data_schema=vol.Schema(
                 {
                     vol.Required("name", default=_stored_label(light)): str,
-                    vol.Required("light", default=light_token): vol.In(light_options),
-                    vol.Required("relay", default=relay_token): vol.In(relay_options),
+                    vol.Required(
+                        "light", default=light_labels[light_token]
+                    ): _filter_select(light_options),
+                    vol.Required(
+                        "relay", default=relay_labels[relay_token]
+                    ): _filter_select(relay_options),
                 }
             ),
             errors=errors,

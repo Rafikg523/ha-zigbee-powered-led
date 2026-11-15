@@ -38,7 +38,7 @@
       },
       "add_circuit": {
         "title": "Add circuit",
-        "description": "Name the virtual light and select one controller with its power channel. This does not add the circuit to a group. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
+        "description": "Name the virtual light and select one controller with its power channel. Type a name in either list to filter it. This does not add the circuit to a group. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "data": {
           "name": "Virtual entity name",
           "light": "LED controller and endpoint",
@@ -62,7 +62,7 @@
       },
       "circuit_details": {
         "title": "Edit circuit {circuit}",
-        "description": "Change the name, controller or power channel. The light and its diagnostics keep their entity ids and history. A circuit in a group keeps its controller and channel; remove it from the group first. Saving reloads the integration.",
+        "description": "Change the name, controller or power channel. Type a name in either list to filter it. The light and its diagnostics keep their entity ids and history. A circuit in a group keeps its controller and channel; remove it from the group first. Saving reloads the integration.",
         "data": {
           "name": "Virtual entity name",
           "light": "LED controller and endpoint",
@@ -92,6 +92,7 @@
       "need_two_members": "Select at least two circuits for the group.",
       "already_mapped": "That name, controller, or relay channel is already used.",
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
+      "unknown_choice": "Choose a row from the list. Typing a name only filters it.",
       "circuit_in_group": "This circuit belongs to a group. Remove it from the group before changing its controller or channel.",
       "group_rename_failed": "Zigbee2MQTT did not confirm the rename. Check that the bridge is online and try again."
     },

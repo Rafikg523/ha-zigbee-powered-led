@@ -213,13 +213,11 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
         "light",
         "relay",
     }
-    selector = next(
-        value
-        for key, value in form["data_schema"].schema.items()
-        if str(key) == "light"
-    )
-    assert "0x0000000000000002|1" not in selector.container
-    assert "0x0000000000000003|1" in selector.container
+    lights = _choice_labels(form, "light")
+    relays = _choice_labels(form, "relay")
+    assert "0x0000000000000002|1" not in lights
+    assert "zigbee2mqtt/led2 — 0x0000000000000003 / 1" in lights
+    assert "zigbee2mqtt/relay — 0x0000000000000001 / 2 / state_l2" in relays
     taken = await flow.async_step_add_circuit(
         {
             "name": "Salon",
@@ -243,6 +241,62 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert entry.data["lights"][0]["name"] == "Kuchnia"
     assert entry.data["groups"] == []
     assert scheduled == [entry.entry_id]
+
+
+async def test_typed_name_must_be_a_listed_choice(hass, discovery, monkeypatch):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "base_topic": "zigbee2mqtt",
+            "relay_channels": [],
+            "lights": [],
+            "groups": [],
+            "rooms": [],
+            "policies": _one_pair()["policies"],
+            "report_extension": False,
+        },
+    )
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(
+        hass.config_entries, "async_schedule_reload", lambda entry_id: None
+    )
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    form = await flow.async_step_add_circuit()
+    light = next(
+        item for item in _choice_labels(form, "light") if "0x0000000000000002" in item
+    )
+    relay = next(
+        item for item in _choice_labels(form, "relay") if item.endswith("state_l1")
+    )
+    fragment = await flow.async_step_add_circuit(
+        {"name": "Kuchnia", "light": "led1", "relay": relay}
+    )
+    assert fragment["type"] == "form"
+    assert fragment["errors"]["base"] == "unknown_choice"
+    result = await flow.async_step_add_circuit(
+        {"name": "Kuchnia", "light": light, "relay": relay}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.data["lights"][0]["device_ieee"] == "0x0000000000000002"
+    assert entry.data["lights"][0]["endpoint"] == 1
+    assert entry.data["relay_channels"][0]["state_key"] == "state_l1"
+
+
+def _choice_labels(form, field: str) -> list[str]:
+    selector = next(
+        value for key, value in form["data_schema"].schema.items() if str(key) == field
+    )
+    assert selector.config["mode"] == "dropdown"
+    assert selector.config["custom_value"] is True
+    assert selector.config["multiple"] is False
+    options = selector.config["options"]
+    assert options
+    assert all(item["value"] == item["label"] for item in options)
+    return [item["value"] for item in options]
 
 
 def test_menu_labels_follow_the_ha_language():

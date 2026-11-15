@@ -70,6 +70,7 @@ async def test_add_circuit_only_offers_light_endpoints(hass, flow):
 
     from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
     from custom_components.zigbee_led_orchestrator.const import DOMAIN
+    from tests.ha.test_config_flow import _choice_labels
 
     created = await flow.async_step_user(selections())
     entry = MockConfigEntry(domain=DOMAIN, data=created["data"])
@@ -78,10 +79,11 @@ async def test_add_circuit_only_offers_light_endpoints(hass, flow):
     options.hass = hass
     options.handler = entry.entry_id
     form = await options.async_step_add_circuit()
-    schema = form["data_schema"].schema
-    selector = next(value for key, value in schema.items() if str(key) == "light")
-    assert "0x0000000000000001|1" not in selector.container
-    assert "0x0000000000000002|1" in selector.container
+    lights = _choice_labels(form, "light")
+    relays = _choice_labels(form, "relay")
+    assert "0x0000000000000001|1" not in lights
+    assert "zigbee2mqtt/led1 — 0x0000000000000002 / 1" in lights
+    assert any(item.endswith("state_l1") for item in relays)
 
 
 async def test_options_remain_accessible_before_entry_is_loaded(hass):

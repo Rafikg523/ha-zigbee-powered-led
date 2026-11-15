@@ -38,7 +38,7 @@
       },
       "add_circuit": {
         "title": "Dodaj obwód",
-        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Wpisz nazwę na liście, żeby ją przefiltrować. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "data": {
           "name": "Nazwa wirtualnej encji",
           "light": "Kontroler LED i endpoint",
@@ -62,7 +62,7 @@
       },
       "circuit_details": {
         "title": "Edytuj obwód {circuit}",
-        "description": "Zmień nazwę, kontroler albo kanał zasilania. Światło i jego diagnostyka zachowują identyfikatory encji i historię. Obwód w grupie zachowuje kontroler i kanał; najpierw usuń go z grupy. Zapis przeładowuje integrację.",
+        "description": "Zmień nazwę, kontroler albo kanał zasilania. Wpisz nazwę na liście, żeby ją przefiltrować. Światło i jego diagnostyka zachowują identyfikatory encji i historię. Obwód w grupie zachowuje kontroler i kanał; najpierw usuń go z grupy. Zapis przeładowuje integrację.",
         "data": {
           "name": "Nazwa wirtualnej encji",
           "light": "Kontroler LED i endpoint",
@@ -92,6 +92,7 @@
       "need_two_members": "Wybierz co najmniej dwa obwody do grupy.",
       "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "unknown_choice": "Wybierz pozycję z listy. Wpisanie nazwy tylko ją filtruje.",
       "circuit_in_group": "Ten obwód należy do grupy. Usuń go z grupy, zanim zmienisz kontroler albo kanał.",
       "group_rename_failed": "Zigbee2MQTT nie potwierdził zmiany nazwy. Sprawdź, czy mostek jest online, i spróbuj ponownie."
     },
