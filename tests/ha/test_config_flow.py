@@ -238,7 +238,7 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert result["type"] == "create_entry"
     assert entry.data["policies"] == _one_pair()["policies"]
     assert entry.data["lights"][1]["id"] == "light_2"
-    assert entry.data["lights"][1]["name"] == "Salon"
+    assert entry.data["lights"][1]["name"] == "Salon_orchestrator"
     assert entry.data["lights"][0]["name"] == "Kuchnia"
     assert entry.data["groups"] == []
     assert scheduled == [entry.entry_id]
@@ -294,14 +294,15 @@ async def test_added_circuit_stays_out_of_existing_groups(hass, discovery, monke
     flow = OptionsFlow()
     flow.hass = hass
     flow.handler = entry.entry_id
-    result = await flow.async_step_add_circuit(
+    suffixed = await flow.async_step_add_circuit(
         {
-            "name": "Jadalnia",
+            "name": "Jadalnia_orchestrator",
             "light": "0x0000000000000003|1",
             "relay": "0x0000000000000001|2|state_l2",
         }
     )
-    assert result["type"] == "create_entry"
+    assert suffixed["type"] == "create_entry"
+    assert entry.data["lights"][1]["name"] == "Jadalnia_orchestrator"
     assert entry.data["groups"] == [
         {"id": "group_1", "name": "Salon", "z2m_id": 7, "members": ["light_1"]}
     ]
@@ -379,6 +380,14 @@ async def test_options_reject_duplicate_name_and_full_catalog(hass, discovery):
         }
     )
     assert result["errors"]["base"] == "already_mapped"
+    same = await flow.async_step_add_circuit(
+        {
+            "name": "Kuchnia_orchestrator",
+            "light": "0x0000000000000003|1",
+            "relay": "0x0000000000000001|2|state_l2",
+        }
+    )
+    assert same["errors"]["base"] == "already_mapped"
     full = MockConfigEntry(domain=DOMAIN, data=valid_config())
     full.add_to_hass(hass)
     blocked = OptionsFlow()

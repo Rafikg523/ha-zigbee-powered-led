@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 — nazwa nowego obwodu kończy się na _orchestrator
+
+- Przy dodawaniu obwodu nazwa dostaje końcówkę `_orchestrator`. `Kuchnia` zapisuje encję `Kuchnia_orchestrator`. Wpisanie `Kuchnia_orchestrator` nie podwaja końcówki. Ta sama nazwa, już z końcówką albo bez niej, jest odrzucana jako zajęta.
+- Obwody zapisane wcześniej zostają przy swoich nazwach. Samo aktualizowanie ich nie przemianowuje.
+- To zwykłe wydanie, bez przyrostka. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.3.2`. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
 ## 0.2.0 — sterowanie wraca samo, brak jednego urządzenia nie gasi reszty
 
 - Po restarcie Home Assistant, resync, dodaniu obwodu albo utworzeniu grupy sterowanie włącza się samo, gdy mostek Zigbee2MQTT jest online i katalog urządzeń jest znany. Stare ON nie jest odtwarzane.

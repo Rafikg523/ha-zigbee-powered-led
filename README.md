@@ -2,14 +2,14 @@
 
 Integracja Home Assistant dla kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Obwody dodaje się po jednej parze. Opcjonalnie sama zakłada grupę Zigbee2MQTT o nazwie kończącej się na `_orchestrator` i steruje nią dodane LED-y.
 
-**Wersja 0.2.0.** Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania.
+**Wersja 0.3.2.** Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania.
 
 ## Instalacja i konfiguracja
 
-1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration** i zainstaluj wydanie `v0.2.0`.
+1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration** i zainstaluj wydanie `v0.3.2`.
 2. Zainstaluj i uruchom ponownie Home Assistanta.
 3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**. Instalacja pyta tylko o temat Zigbee2MQTT i wspólne czasy.
-4. Obwód dodasz w **Konfiguruj → Dodaj obwód**: nazwa encji, kontroler i kanał. Grupę utworzysz w **Konfiguruj → Utwórz grupę**: nazwa, na przykład `Salon`, i wybór już dodanych obwodów. Powstaje grupa i encja `Salon_orchestrator`.
+4. Obwód dodasz w **Konfiguruj → Dodaj obwód**: nazwa, na przykład `Kuchnia`, tworzy encję `Kuchnia_orchestrator`, plus kontroler i kanał. Grupę utworzysz w **Konfiguruj → Utwórz grupę**: nazwa, na przykład `Salon`, i wybór już dodanych obwodów. Powstaje grupa i encja `Salon_orchestrator`.
 5. Integracja uruchomi się w **OBSERVE**. Przygotowanie aktywnego pilotażu, rozszerzenie raportów Z2M i procedura prób opisane są w [INSTALLATION.md](INSTALLATION.md) i [TESTING.md](TESTING.md).
 
 Przed wyjazdem możesz zakończyć instalację i mapowanie. Przed aktywacją na miejscu potrzebne są poprawne mapowanie, kopia i rollback oraz wyłączenie innych ścieżek sterowania wybranymi obwodami.

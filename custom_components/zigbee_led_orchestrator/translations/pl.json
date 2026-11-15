@@ -44,7 +44,7 @@
       },
       "add_circuit": {
         "title": "Dodaj obwód",
-        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Nazwij wirtualną encję i wybierz jeden kontroler z kanałem zasilania. Nazwa Kuchnia tworzy encję światła Kuchnia_orchestrator. Dopisanie końcówki drugi raz jej nie podwaja. Ten krok nie dodaje obwodu do grupy. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "data": {
           "name": "Nazwa wirtualnej encji",
           "light": "Kontroler LED i endpoint",
