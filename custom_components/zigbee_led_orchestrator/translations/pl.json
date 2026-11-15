@@ -28,11 +28,13 @@
     "step": {
       "choose": {
         "title": "Konfiguracja",
-        "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Dodawaj, edytuj i usuwaj obwody lub grupy. Zapis przeładowuje integrację bez odtwarzania starego ON.",
         "menu_options": {
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
-          "control": "Tryb sterowania"
+          "control": "Tryb sterowania",
+          "edit_circuit": "Edytuj obwód",
+          "edit_group": "Edytuj grupę"
         }
       },
       "control": {
@@ -58,6 +60,42 @@
           "name": "Nazwa grupy",
           "members": "Obwody w tej grupie"
         }
+      },
+      "edit_circuit": {
+        "title": "Wybierz obwód",
+        "data": {
+          "circuit": "Obwód"
+        }
+      },
+      "edit_circuit_details": {
+        "title": "Edytuj obwód",
+        "data": {
+          "name": "Nazwa",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał przekaźnika"
+        },
+        "description": "Zmieniaj nazwę, kontroler i kanał zasilania. Dla obwodu w grupie integracja najpierw uzgadnia skład Z2M. Zapewnij zasilanie starego i nowego kontrolera; integracja nie włączy go automatycznie."
+      },
+      "edit_group": {
+        "title": "Wybierz grupę",
+        "data": {
+          "group": "Grupa"
+        }
+      },
+      "edit_group_details": {
+        "title": "Edytuj grupę",
+        "description": "Zmiana składu wymaga zasilonych kontrolerów. W razie przerwania sprawdź stan grupy przed ponowieniem.",
+        "data": {
+          "name": "Nazwa grupy",
+          "members": "Obwody w grupie"
+        }
+      },
+      "recover_group": {
+        "title": "Dokończ operację grupy",
+        "description": "Przerwano operację grupy {group}. Sprawdź jej stan w Zigbee2MQTT i upewnij się, że poprzednie żądania się zakończyły. Przy nieznanym wyniku najpierw uruchom ponownie Zigbee2MQTT. Wznowienie przyjmie wykonaną zmianę albo ponowi brakujący krok; nie włączy zasilania.\n\n{reason}",
+        "data": {
+          "confirmed": "Sprawdziłem grupę i Z2M zakończyło wcześniejsze żądania"
+        }
       }
     },
     "error": {
@@ -71,14 +109,23 @@
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
       "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
       "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
-      "need_two_members": "Wybierz co najmniej dwa obwody do grupy.",
+      "need_two_members": "Wybierz co najmniej jeden obwód do grupy.",
       "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
-      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "group_operation_failed": "Zmiana nie została potwierdzona. Sprawdź zasilanie kontrolerów i stan Z2M. Jeśli operacja oczekuje, otwórz Konfiguruj → Dokończ operację grupy.",
+      "confirmation_required": "Potwierdź sprawdzenie grupy i zakończenie wcześniejszych żądań."
     },
     "abort": {
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
       "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane.",
-      "need_two_circuits": "Dodaj co najmniej dwa obwody, które nie są jeszcze w grupie."
+      "need_two_circuits": "Dodaj co najmniej jeden obwód, który nie jest jeszcze w grupie.",
+      "no_circuits": "Najpierw dodaj obwód.",
+      "circuit_missing": "Obwód został usunięty.",
+      "no_groups": "Najpierw utwórz grupę.",
+      "group_missing": "Grupa została usunięta.",
+      "group_operation_pending": "Najpierw dokończ rozpoczętą operację grupy.",
+      "configuration_changed": "Konfiguracja zmieniła się. Otwórz edycję ponownie.",
+      "no_pending_operation": "Brak rozpoczętej operacji grupy."
     }
   },
   "services": {

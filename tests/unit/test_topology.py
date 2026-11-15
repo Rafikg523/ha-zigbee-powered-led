@@ -17,6 +17,13 @@ def test_nested_friendly_name_preserved():
     )
 
 
+def test_missing_endpoint_metadata_does_not_invent_endpoint_one():
+    topology = Topology("zigbee2mqtt")
+    topology.update_devices([device()])
+    with pytest.raises(KeyError):
+        topology.resolve_device("0x00124b0000000001").endpoint_name(1)
+
+
 def test_reused_name_or_bridge_collision_is_rejected():
     topology = Topology("zigbee2mqtt")
     topology.update_devices([device()])

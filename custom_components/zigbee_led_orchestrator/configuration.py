@@ -18,7 +18,7 @@ from .models import (
 
 _IEEE = re.compile(r"0x[0-9a-fA-F]{16}\Z")
 _ID = re.compile(r"[A-Za-z0-9_-]+\Z")
-_STATE_KEY = re.compile(r"state_[A-Za-z0-9_]+\Z")
+_STATE_KEY = re.compile(r"state(_[A-Za-z0-9_]+)?\Z")
 
 
 def kelvin_to_mired(kelvin: int) -> int:

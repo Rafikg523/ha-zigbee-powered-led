@@ -1,5 +1,23 @@
 # Changelog
 
+## Niewydane — wiele grup i obwodów
+
+- Dowolna liczba niezależnych grup i obwodów w jednym wpisie integracji; grupa może mieć jednego lub więcej członków. Przekaźniki jednokanałowe z polem `state` są akceptowane. Przydział identyfikatorów grup nie kończy się na 254.
+- Synchronizacja składu używa osobnych, nieretained wskazówek zasilania także przy włączonym rozszerzeniu. Te dane nigdy nie dowodzą gotowości ani nie dopuszczają LED `/set`. Retained/cache nie pozwalają dodawać członków.
+- Brak urządzenia lub odmowa jednej grupy nie zatrzymuje synchronizacji pozostałych. Utracone potwierdzenia i odmowy mają odstęp przed kolejnym uzgodnieniem katalogu. Powrót mostka wznawia synchronizację, bez odtwarzania ON.
+- Nowa konfiguracja odrzuca nazwę istniejącej grupy Z2M. Edycja chroni zapisany identyfikator, a przerwana operacja blokuje również nowych członków po restarcie.
+- Testy obejmują 5 grup po 10 obwodów, rzeczywiste publikacje niezależnych grup przy awarii sąsiedniej, synchronizację 50 członków i restart. Poprawiono porównanie granicy czasu rozruchu, które mogło opóźniać wysyłkę do timeoutu.
+
+## 0.3.0 — lista urządzeń, edycja i usuwanie
+
+- Obwody i grupy są widoczne jako osobne urządzenia na stronie integracji. Każdy obwód zbiera własne światło i sensory diagnostyczne; wiersz prowadzi do informacji o urządzeniu.
+- Konfiguruj udostępnia edycję nazwy, kontrolera i kanału obwodu oraz nazwy i składu grupy. Zmiana kontrolera w grupie zachowuje identyfikatory encji i numer grupy Z2M.
+- Menu urządzenia pozwala usuwać obwody oraz grupy. Usuwanie obwodu używanego przez grupę jest blokowane; usunięcie grupy wymaga potwierdzenia Z2M i nigdy nie używa force.
+- Przerwane operacje zapisują postęp i blokują zarządzaną grupę oraz jej członków. Konfiguruj → Dokończ operację grupy pozwala jawnie uzgodnić wynik po sprawdzeniu Z2M, także po restarcie HA.
+- Zachowano istniejące entity_id, unique_id, preferencje i nazwy użytkownika. Usunięte identyfikatory nie są ponownie przydzielane. Ręcznie wyłączone sterowanie pozostaje wyłączone po przeładowaniu.
+- Zarządzanie nie włącza zasilania i nie odtwarza poprzednich ON. Testy pozostają syntetyczne; fizyczny odbiór instalacji jest osobnym etapem.
+- Po aktualizacji uruchom ponownie cały Home Assistant i odśwież przeglądarkę. Diagnose ma pokazać runtime_version: 0.3.0. Nie usuwaj wpisu integracji ani rozszerzenia Z2M.
+
 ## 0.2.0 — sterowanie wraca samo, brak jednego urządzenia nie gasi reszty
 
 - Po restarcie Home Assistant, resync, dodaniu obwodu albo utworzeniu grupy sterowanie włącza się samo, gdy mostek Zigbee2MQTT jest online i katalog urządzeń jest znany. Stare ON nie jest odtwarzane.

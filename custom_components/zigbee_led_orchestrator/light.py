@@ -12,6 +12,7 @@ from homeassistant.components.light import (
 )
 from homeassistant.exceptions import HomeAssistantError
 
+from .entity import device_info
 from .group_provisioner import z2m_group_name
 from .models import IntentPatch
 
@@ -51,7 +52,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class OrchestratorLight(LightEntity):
     """Represent desired state separately from physical observations."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -77,6 +78,9 @@ class OrchestratorLight(LightEntity):
         self._attr_supported_color_modes = {mode}
         self._light_id = light_id
         self._attr_name = name or light_id.replace("_", " ").title()
+        self._attr_device_info = device_info(
+            entry_id, light_id, name or light_id.replace("_", " ").title()
+        )
         self._attr_unique_id = f"{entry_id}_{light_id}"
         self._config_min_kelvin = min_kelvin
         self._config_max_kelvin = max_kelvin
@@ -183,7 +187,7 @@ class OrchestratorLight(LightEntity):
 class OrchestratorGroupLight(LightEntity):
     """Group entity whose state is derived from its members' own intent."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -201,6 +205,9 @@ class OrchestratorGroupLight(LightEntity):
         self._members = members
         self._attr_unique_id = f"{entry_id}_{group_id}"
         self._attr_name = name or group_id
+        self._attr_device_info = device_info(
+            entry_id, group_id, name or group_id, group=True
+        )
         self._supports_brightness = False
         self._supports_color_temp = False
         self._config_min_kelvin = min_kelvin
@@ -269,6 +276,7 @@ class OrchestratorGroupLight(LightEntity):
     def extra_state_attributes(self) -> dict[str, object]:
         snapshot = self._runtime.group_snapshot(self._group_id)
         return {
+            "members": list(self._members),
             "confirmed_members": snapshot.confirmed_members,
             "member_count": snapshot.member_count,
             "confirmed": snapshot.confirmed,

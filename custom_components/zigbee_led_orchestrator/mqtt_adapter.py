@@ -27,7 +27,14 @@ from .topology import Topology
 
 _LOGGER = logging.getLogger(__name__)
 _BRIDGE_PATHS = frozenset(
-    {"group/add", "group/options", "group/members/add", "group/members/remove"}
+    {
+        "group/add",
+        "group/remove",
+        "group/rename",
+        "group/options",
+        "group/members/add",
+        "group/members/remove",
+    }
 )
 
 
@@ -60,8 +67,10 @@ class MqttAdapter:
         self._pending_groups: object | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._topology_subscribers: set[Callable[[int], None]] = set()
-        self._bridge_waiters: dict[str, asyncio.Future] = {}
+        self._bridge_waiters: dict[str, tuple[str, asyncio.Future]] = {}
         self.last_error: str | None = None
+        self.relay_power_hints: dict[str, SwitchState] = {}
+        self.power_hint_listener: Callable[[], None] | None = None
 
     async def start(self, on_observation: Callable[[Observation], None]) -> None:
         if not self._closed:
@@ -134,6 +143,7 @@ class MqttAdapter:
     def _connection_changed(self, connected: bool) -> None:
         self._connected = connected
         if not connected:
+            self.relay_power_hints.clear()
             self.reports.reset()
             self._session += 1
             self._bridge_online = False
@@ -164,6 +174,7 @@ class MqttAdapter:
         if self._closed:
             raise RuntimeError("adapter closed")
         self.last_error = None
+        self.relay_power_hints.clear()
         self._session += 1
         self.reports.reset()
         self._bridge_online = False
@@ -315,7 +326,10 @@ class MqttAdapter:
                     self.topology.update_groups(data)
                     self._topology_changed()
             elif message.topic.startswith(prefix + "response/group/"):
-                self._finish_bridge_response(data)
+                if not message.retain:
+                    self._finish_bridge_response(
+                        data, message.topic[len(prefix + "response/") :]
+                    )
             elif message.topic == prefix + "event":
                 if not isinstance(data, dict) or not isinstance(data.get("type"), str):
                     raise ValueError("invalid event")
@@ -341,9 +355,6 @@ class MqttAdapter:
             _LOGGER.warning("Ignoring MQTT message: %s", exc)
 
     def _device_message(self, message: mqtt.ReceiveMessage, data: object) -> None:
-        if self._config.report_extension:
-            # Merged normal states cannot overwrite raw per-attribute evidence.
-            return
         if not isinstance(data, dict):
             raise TypeError("device payload must be an object")
         quality = (
@@ -360,11 +371,18 @@ class MqttAdapter:
                 and channel.state_key in data
             ):
                 state = self._state(data[channel.state_key])
-                self._emit(
-                    RelayObservation(
-                        channel.id, state, self._now(), message.retain, quality
-                    )
+                self._power_hint(
+                    channel.id, state if not message.retain else SwitchState.UNKNOWN
                 )
+                if not self._config.report_extension:
+                    self._emit(
+                        RelayObservation(
+                            channel.id, state, self._now(), message.retain, quality
+                        )
+                    )
+        if self._config.report_extension:
+            # Merged states help maintain membership, never overwrite raw evidence.
+            return
         for light in self._config.lights:
             try:
                 device = self.topology.resolve_device(light.device_ieee)
@@ -409,22 +427,40 @@ class MqttAdapter:
         return SwitchState(value)
 
     def _emit(self, observation: Observation) -> None:
+        if isinstance(observation, BridgeObservation) and not observation.online:
+            self.relay_power_hints.clear()
+        if isinstance(observation, RelayObservation):
+            self._power_hint(
+                observation.channel_id,
+                observation.state
+                if not observation.retained
+                and observation.quality != EvidenceQuality.CACHE
+                else SwitchState.UNKNOWN,
+            )
         if self._callback is not None:
             self._callback(observation)
+
+    def _power_hint(self, channel: str, state: SwitchState) -> None:
+        self.relay_power_hints[channel] = state
+        if self.power_hint_listener is not None:
+            self.power_hint_listener()
 
     def _fail_bridge_waiters(self) -> None:
         waiters = tuple(self._bridge_waiters.values())
         self._bridge_waiters.clear()
-        for future in waiters:
+        for _path, future in waiters:
             if not future.done():
                 future.set_exception(RuntimeError("bridge request unavailable"))
 
-    def _finish_bridge_response(self, data: object) -> None:
+    def _finish_bridge_response(self, data: object, path: str) -> None:
         if not isinstance(data, dict):
             return
         transaction = data.get("transaction")
-        future = self._bridge_waiters.get(transaction)
-        if future is not None and not future.done():
+        pending = self._bridge_waiters.get(transaction)
+        if pending is None:
+            return
+        expected_path, future = pending
+        if expected_path == path and not future.done():
             future.set_result(data)
 
     async def request_bridge(self, path: str, payload: dict[str, object]) -> dict:
@@ -447,7 +483,7 @@ class MqttAdapter:
         body["transaction"] = transaction
         encoded = json.dumps(body, separators=(",", ":"), allow_nan=False)
         future: asyncio.Future = asyncio.get_running_loop().create_future()
-        self._bridge_waiters[transaction] = future
+        self._bridge_waiters[transaction] = (path, future)
         try:
             await mqtt.async_publish(
                 self._hass,
@@ -561,6 +597,8 @@ class MqttAdapter:
 
     async def close(self) -> None:
         self._closed = True
+        self.relay_power_hints.clear()
+        self.power_hint_listener = None
         self._session += 1
         self.reports.reset()
         self._active = False

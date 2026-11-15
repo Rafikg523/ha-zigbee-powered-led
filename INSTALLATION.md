@@ -16,10 +16,10 @@ Wpisz rzeczywisty base topic Z2M. Integracja pasywnie czeka do 10 sekund na kata
 
 - Instalacja pyta o temat bazowy i wspólne czasy. Nie wybiera się tu kontrolera ani grupy.
 - Obwód dodasz w **Konfiguruj → Dodaj obwód**: nazwa wirtualnej encji, jeden kontroler LED i jego kanał przekaźnika. Wybory wskazują nazwy oraz IEEE i endpointy. Numer kanału nie dowodzi jego fizycznego okablowania — sprawdź je na miejscu. Zakres temperatury pochodzi z exposes kontrolera. Zajęta nazwa, ten sam endpoint LED albo ten sam kanał przekaźnika są odrzucane. Zapis przeładowuje wpis i wraca do trybu obserwacji. Nowy obwód nie wchodzi sam do grupy.
-- Grupę utworzysz w **Konfiguruj → Utwórz grupę**, gdy są co najmniej dwa obwody spoza innych grup. Podajesz nazwę, na przykład `Salon`, i zaznaczasz, które z dostępnych obwodów mają do niej należeć. Powstaje grupa Zigbee2MQTT i encja światła `Salon_orchestrator`. Integracja dopina wybrane endpointy, gdy ich przekaźniki są włączone, i ustawia `optimistic: false` oraz `retain: false`. Cudzych grup nie zmienia. Encję discovery Z2M o tej samej nazwie wyłącz w Home Assistantcie, żeby automatyzacje nie omijały encji integracji. Obwód może należeć tylko do jednej grupy.
+- Grupę utworzysz w **Konfiguruj → Utwórz grupę**, gdy jest co najmniej jeden obwód spoza innych grup. Podajesz nazwę, na przykład `Salon`, i zaznaczasz, które z dostępnych obwodów mają do niej należeć. Powstaje grupa Zigbee2MQTT i encja światła `Salon_orchestrator`. Integracja dopina wybrane endpointy, gdy ich przekaźniki są włączone, i ustawia `optimistic: false` oraz `retain: false`. Cudzych grup nie zmienia. Encję discovery Z2M o tej samej nazwie wyłącz w Home Assistantcie, żeby automatyzacje nie omijały encji integracji. Obwód może należeć tylko do jednej grupy.
 - Czasy formularza są parametrami początkowymi do prób, nie wynikami pomiarów. Dostosuj boot grace i timeout gotowości do pomiarów. Sam boot grace nie odblokowuje wysyłki bez raportu.
 
-Dla przygotowania samej konfiguracji można zostawić rozszerzenie raportów wyłączone. Do prób aktywnych w pierwszym kroku zaznacz **Użyj rozszerzenia raportów Zigbee2MQTT**. Wyboru dokonuje się przy dodawaniu integracji; aby zmienić mapowanie lub ten wybór, zanotuj konfigurację, usuń wpis i dodaj go ponownie. Usunięcie wpisu usuwa jego encje i nie wysyła do urządzeń polecenia OFF.
+Dla przygotowania samej konfiguracji można zostawić rozszerzenie raportów wyłączone. Do prób aktywnych w pierwszym kroku zaznacz **Użyj rozszerzenia raportów Zigbee2MQTT**. Wyboru dokonuje się przy dodawaniu integracji; aby zmienić wybór rozszerzenia, zanotuj konfigurację, usuń wpis i dodaj go ponownie. Usunięcie wpisu usuwa jego encje i nie wysyła do urządzeń polecenia OFF.
 
 Sam wpis integracji nie tworzy jeszcze encji światła. Każdy dodany obwód tworzy encję o podanej nazwie i diagnostykę phase/effective_state/confirmed. Grupa pojawia się dopiero po jej utworzeniu. W OBSERVE encje sterujące są niedostępne — jest to oczekiwane. Diagnostyka pozostaje dostępna.
 
@@ -42,7 +42,7 @@ Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowan
 
 Od wersji 0.1.0b5, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
 
-Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.2.0`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.3.0`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
 
 ## Powrót do poprzedniego sterowania
 
@@ -56,3 +56,17 @@ Usunięcie rozszerzenia Z2M zatrzymuje przekazywanie raportów. Najpierw wstrzym
 Przy włączonym rozszerzeniu raportów i potwierdzonym zasilaniu wyłączenie wirtualnego światła najpierw wyłącza kontroler LED, odczytuje jego stan i czeka na rzeczywiste potwierdzenie OFF. Następnie odcina przekaźnik. Oczekiwanie na etap LED jest ograniczone parametrem verification_timeout_ms (domyślnie 2 s); w razie braku odpowiedzi przekaźnik i tak jest wyłączany, a reason opisuje brak potwierdzenia LED. Przyciski fizyczne zachowują bezpośrednie odcięcie zasilania.
 
 Ta kolejność pozwala kontrolerowi zapamiętać OFF, ale nie ustawia `do_not_disturb` ani nie gwarantuje, że firmware pozostanie wyłączony po przywróceniu napięcia. Zachowanie startowe należy sprawdzić na urządzeniu; po nagłym fizycznym odcięciu przy ON problem błysku może pozostać.
+
+## Zarządzanie obwodami i grupami
+
+Na stronie integracji każdy obwód i grupa są osobnymi urządzeniami. Obwód zbiera światło i sensory phase/effective_state/confirmed. Kliknięcie wiersza otwiera informacje o urządzeniu, a ołówek zmienia jego nazwę i obszar w HA. Pełne mapowanie i skład zmienisz przez **Konfiguruj → Edytuj obwód / Edytuj grupę**. Istniejące identyfikatory encji i własne nazwy są zachowane.
+
+Zmiana kontrolera będącego w grupie najpierw usuwa stary endpoint i dodaje nowy w tej samej grupie Z2M. Numer grupy i identyfikator obwodu pozostają zachowane. Zapewnij zasilanie obu kontrolerów; integracja nie włącza go automatycznie. Konfiguracja jest zapisywana dopiero po odpowiedziach Z2M i zgodnym katalogu. Pozostałe polecenia dla zarządzanej grupy i jej obwodów są w tym czasie blokowane.
+
+Menu urządzenia **Usuń** usuwa jego konfigurację i encje. Obwód należący do grupy wymaga wcześniejszej edycji lub usunięcia grupy. Usunięcie grupy usuwa również grupę Z2M utworzoną przez Orchestrator, nigdy z `force`. Niedostępny kontroler może uniemożliwić usunięcie. Usunięcie całego wpisu integracji nie usuwa grup Z2M ani nie wysyła OFF.
+
+### Dokończenie przerwanej zmiany
+
+Jeśli zmiana się nie powiedzie, poprzednia konfiguracja i postęp operacji pozostają zapisane także po restarcie HA. W **Konfiguruj** pojawi się **Dokończ operację grupy**. Zapewnij zasilanie kontrolerów i sprawdź grupę w Z2M. Jeżeli wynik wcześniejszego żądania jest nieznany, uruchom ponownie Z2M i poczekaj na pełny katalog, aby zakończyć stare żądania. Dopiero wtedy zaznacz potwierdzenie w formularzu.
+
+Wznowienie porównuje zapisany identyfikator, nazwę i endpointy z katalogiem. Przyjmie już wykonaną zmianę bez ponownej publikacji albo wyśle brakujący krok. Nie uruchamia historycznego ON ani nie włącza przekaźników. Zmieniony identyfikator grupy, zajęta nazwa lub obce endpointy pozostawiają blokadę i wymagają poprawienia grupy w Z2M. Po pomyślnym zakończeniu wpis jest przeładowywany; ręcznie wyłączone sterowanie pozostaje wyłączone.

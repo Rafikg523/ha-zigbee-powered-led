@@ -250,7 +250,11 @@ def validate_topology(
         for expose in device.capabilities:
             if not isinstance(expose, dict) or expose.get("type") != "switch":
                 continue
-            if expose.get("endpoint") != endpoint_name:
+            if expose.get("endpoint") not in (
+                endpoint_name,
+                str(channel.endpoint),
+                None,
+            ):
                 continue
             features = expose.get("features", [])
             if not isinstance(features, list):
@@ -274,7 +278,8 @@ def validate_topology(
             if (
                 not isinstance(expose, dict)
                 or expose.get("type") != "light"
-                or expose.get("endpoint") != endpoint_name
+                or expose.get("endpoint")
+                not in (endpoint_name, str(light.endpoint), None)
             ):
                 continue
             features = expose.get("features", [])

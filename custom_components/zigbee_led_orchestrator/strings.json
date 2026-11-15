@@ -28,11 +28,13 @@
     "step": {
       "choose": {
         "title": "Configure",
-        "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
+        "description": "Add, edit and remove circuits or groups. Saving reloads the integration without replaying an old ON.",
         "menu_options": {
           "add_circuit": "Add circuit",
           "create_group": "Create group",
-          "control": "Control mode"
+          "control": "Control mode",
+          "edit_circuit": "Edit circuit",
+          "edit_group": "Edit group"
         }
       },
       "control": {
@@ -58,6 +60,42 @@
           "name": "Group name",
           "members": "Circuits in this group"
         }
+      },
+      "edit_circuit": {
+        "title": "Select circuit",
+        "data": {
+          "circuit": "Circuit"
+        }
+      },
+      "edit_circuit_details": {
+        "title": "Edit circuit",
+        "data": {
+          "name": "Name",
+          "light": "LED controller and endpoint",
+          "relay": "Power relay channel"
+        },
+        "description": "Change the name, controller and power channel. For a grouped circuit, the Z2M membership is reconciled before saving. Power the old and new controllers yourself; the integration never turns them on automatically."
+      },
+      "edit_group": {
+        "title": "Select group",
+        "data": {
+          "group": "Group"
+        }
+      },
+      "edit_group_details": {
+        "title": "Edit group",
+        "description": "Changing membership requires powered controllers. If interrupted, check the group status before retrying.",
+        "data": {
+          "name": "Group name",
+          "members": "Circuits in this group"
+        }
+      },
+      "recover_group": {
+        "title": "Recover group operation",
+        "description": "An operation for {group} was interrupted. Check the group in Zigbee2MQTT and ensure previous requests have finished. If the outcome is unknown, restart Zigbee2MQTT first. Recovery accepts an applied change or retries the missing step; it never turns power on.\n\n{reason}",
+        "data": {
+          "confirmed": "I checked the group and Z2M has finished earlier requests"
+        }
       }
     },
     "error": {
@@ -71,14 +109,23 @@
       "invalid_mapping": "The configuration or physical mapping is invalid.",
       "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
       "invalid_group_name": "The group name is empty, too long, or contains characters Zigbee2MQTT cannot use.",
-      "need_two_members": "Select at least two circuits for the group.",
+      "need_two_members": "Select at least one circuit for the group.",
       "already_mapped": "That name, controller, or relay channel is already used.",
-      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
+      "group_operation_failed": "The change is unconfirmed. Check controller power and Z2M. If an operation is pending, open Configure → Recover group operation.",
+      "confirmation_required": "Confirm that you checked the group and earlier requests have finished."
     },
     "abort": {
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
       "no_free_circuit": "Every discovered controller or relay channel is already mapped.",
-      "need_two_circuits": "Add at least two circuits that are not already in a group."
+      "need_two_circuits": "Add at least one circuit that is not already in a group.",
+      "no_circuits": "Add a circuit first.",
+      "circuit_missing": "The circuit no longer exists.",
+      "no_groups": "Create a group first.",
+      "group_missing": "The group no longer exists.",
+      "group_operation_pending": "Complete the pending group operation first.",
+      "configuration_changed": "The configuration changed. Reopen the editor.",
+      "no_pending_operation": "There is no pending group operation."
     }
   },
   "services": {

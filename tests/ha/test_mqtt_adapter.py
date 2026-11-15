@@ -12,6 +12,37 @@ from custom_components.zigbee_led_orchestrator.models import EvidenceQuality
 from tests.unit.test_configuration import valid_config
 
 
+async def test_extension_keeps_membership_power_hints_separate_from_readiness(
+    hass, mqtt_api
+):
+    from custom_components.zigbee_led_orchestrator.models import (
+        RelayObservation,
+        SwitchState,
+    )
+    from custom_components.zigbee_led_orchestrator.mqtt_adapter import MqttAdapter
+
+    data = valid_config()
+    data["report_extension"] = True
+    instance = MqttAdapter(hass, validate_config(data), now=lambda: 1.0)
+    observations = []
+    await instance.start(observations.append)
+    callbacks, _, _ = mqtt_api
+    try:
+        await message(callbacks, "zigbee2mqtt/bridge/devices", devices())
+        await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
+        await message(
+            callbacks, "zigbee2mqtt/room/relay", {"state_l1": "ON"}, retain=True
+        )
+        assert instance.relay_power_hints.get("relay_a") != SwitchState.ON
+        await message(callbacks, "zigbee2mqtt/room/relay", {"state_l1": "ON"})
+        assert instance.relay_power_hints["relay_a"] == SwitchState.ON
+        assert not any(isinstance(item, RelayObservation) for item in observations)
+        await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "offline"})
+        assert not instance.relay_power_hints
+    finally:
+        await instance.close()
+
+
 @pytest.fixture
 def mqtt_api(monkeypatch):
     callbacks = {}
@@ -538,3 +569,47 @@ async def test_orchestrator_group_state_is_not_an_observation(adapter, mqtt_api)
     if result is not None:
         await result
     assert len(observations) == before
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("group/rename", {"from": "group_a_orchestrator", "to": "Salon_orchestrator"}),
+        ("group/remove", {"id": 1}),
+    ],
+)
+async def test_management_response_must_be_live_and_match_request_path(
+    adapter, mqtt_api, path, payload
+):
+    import asyncio
+
+    instance, _ = adapter
+    callbacks, _, _ = mqtt_api
+    await message(callbacks, "zigbee2mqtt/bridge/devices", devices())
+    await message(callbacks, "zigbee2mqtt/bridge/state", {"state": "online"})
+    task = asyncio.create_task(instance.request_bridge(path, payload))
+    try:
+        await asyncio.sleep(0)
+        body = json.loads(mqtt.async_publish.await_args.args[2])
+        response = {"status": "ok", "transaction": body["transaction"], "data": {}}
+
+        async def reply(reply_path, retain=False):
+            await callbacks["zigbee2mqtt/bridge/response/group/#"](
+                SimpleNamespace(
+                    topic="zigbee2mqtt/bridge/response/" + reply_path,
+                    payload=json.dumps(response),
+                    retain=retain,
+                )
+            )
+
+        await reply(path, retain=True)
+        await asyncio.sleep(0)
+        assert not task.done()
+        await reply("group/options")
+        await asyncio.sleep(0)
+        assert not task.done()
+        await reply(path)
+        assert (await task)["status"] == "ok"
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

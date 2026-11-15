@@ -67,7 +67,15 @@ def _intersect(ranges):
 class Runtime:
     """Own a single reconciler and revoke its authority on topology changes."""
 
-    def __init__(self, config, adapter) -> None:
+    def __init__(
+        self,
+        config,
+        adapter,
+        *,
+        user_inactive: bool = False,
+        management_pending: str | None = None,
+        management_members: tuple[str, ...] = (),
+    ) -> None:
         self.config = config
         self.adapter = adapter
         self.mode = ControlMode.OBSERVE
@@ -88,7 +96,10 @@ class Runtime:
         self._signatures: dict[str, tuple | None] = {}
         self._absent: set[str] = set()
         self._absent_groups: set[str] = set()
-        self._user_inactive = False
+        self._user_inactive = user_inactive
+        self._management_pending = management_pending
+        self._management_extra_members = set(management_members)
+        self._management_lock = asyncio.Lock()
         self._language = "en"
         self.notices: dict[str, str] = {}
         self._notice_listener: Callable[[str, str | None], None] | None = None
@@ -101,8 +112,12 @@ class Runtime:
         self._pending_groups: dict[str, int] = {}
         self._provision_task: asyncio.Task | None = None
         self._provision_again = False
+        self._provision_backoff: dict[str, float] = {}
+        self._provision_retry_task: asyncio.Task | None = None
 
     async def start(self) -> None:
+        if hasattr(self.adapter, "power_hint_listener"):
+            self.adapter.power_hint_listener = self._schedule_provision
         self._remove_topology = self.adapter.subscribe_topology(self._topology_changed)
         try:
             await self.adapter.start(self._observation)
@@ -174,6 +189,8 @@ class Runtime:
         )
 
     def _group_matches(self, group, absent: set[str]) -> bool:
+        if self._management_pending in ("*", group.id):
+            return False
         if any(member in absent for member in group.members):
             return False
         found = self.adapter.topology.group_named(z2m_group_name(group.name))
@@ -330,6 +347,7 @@ class Runtime:
     def _observation(self, observation) -> None:
         delta = self._observations.ingest(observation)
         if isinstance(observation, BridgeObservation) and not observation.online:
+            self._options_ready.clear()
             self.mode = ControlMode.OBSERVE
             self.adapter.set_active(False)
             if self._engine is not None:
@@ -340,6 +358,7 @@ class Runtime:
             self._announce(delta.light_ids)
         if isinstance(observation, BridgeObservation) and observation.online:
             self._maybe_arm()
+            self._schedule_provision()
         if isinstance(observation, RelayObservation) and self._relay_powered(
             observation.channel_id
         ):
@@ -514,6 +533,8 @@ class Runtime:
             raise RuntimeError("control unavailable")
         if self._absent.intersection(light_ids):
             raise RuntimeError("device absent")
+        if self._management_members().intersection(light_ids):
+            raise RuntimeError("group management pending")
         result = self._engine.submit(light_ids, patch, source=source)
         self._parameters_submitted(patch)
         return result
@@ -566,7 +587,10 @@ class Runtime:
             or self._closed
         ):
             raise RuntimeError("control unavailable")
-        if group_id in self._absent_groups:
+        if (
+            self._management_pending in ("*", group_id)
+            or group_id in self._absent_groups
+        ):
             raise RuntimeError("group unavailable")
         result = self._groups.submit(group_id, patch, source=source)
         self._parameters_submitted(patch)
@@ -574,7 +598,10 @@ class Runtime:
 
     def group_snapshot(self, group_id: str) -> GroupSnapshot:
         members = next(g.members for g in self.config.groups if g.id == group_id)
-        if group_id in self._absent_groups:
+        if (
+            self._management_pending in ("*", group_id)
+            or group_id in self._absent_groups
+        ):
             return GroupSnapshot(False, 0, len(members), False, False)
         if (
             self._groups is not None
@@ -756,6 +783,10 @@ class Runtime:
             state = self._engine.snapshot(light_id)
             if light_id in self._absent:
                 return replace(state, available=False, reason="device_absent")
+            if light_id in self._management_members():
+                return replace(
+                    state, available=False, reason="group_management_pending"
+                )
             return state
         return LightSnapshot(
             self._desired.get(light_id),
@@ -766,15 +797,27 @@ class Runtime:
             "device_absent" if light_id in self._absent else None,
         )
 
+    def _management_members(self) -> set[str]:
+        return self._management_extra_members | {
+            member
+            for group in self.config.groups
+            if self._management_pending in ("*", group.id)
+            for member in group.members
+        }
+
     def _relay_powered(self, channel_id: str) -> bool:
+        hints = getattr(self.adapter, "relay_power_hints", {})
+        if channel_id in hints:
+            return hints[channel_id] == SwitchState.ON
         for light in self.config.lights:
             if light.power_channel != channel_id:
                 continue
             observed = self._observations.snapshot(light.id)
+            # A live MQTT hint permits membership maintenance, never LED /set.
             if (
                 observed.relay_state == SwitchState.ON
-                and observed.relay_quality == EvidenceQuality.DEVICE_REPORT
                 and observed.relay_retained is False
+                and observed.relay_quality != EvidenceQuality.CACHE
             ):
                 return True
         return False
@@ -787,7 +830,12 @@ class Runtime:
         )
 
     def _schedule_provision(self) -> None:
-        if self._closed or self.mode == ControlMode.PAUSED or not self.config.groups:
+        if (
+            self._closed
+            or self._management_pending
+            or self.mode == ControlMode.PAUSED
+            or not self.config.groups
+        ):
             return
         if self._provision_task is not None and not self._provision_task.done():
             self._provision_again = True
@@ -819,7 +867,7 @@ class Runtime:
             try:
                 device = self.adapter.topology.resolve_device(light.device_ieee)
             except KeyError:
-                return None
+                continue
             directory[light.id] = LightEndpoint(
                 light.device_ieee.lower(), light.endpoint, device.name
             )
@@ -832,13 +880,37 @@ class Runtime:
             if name in present:
                 del self._pending_groups[name]
         return next_group_action(
-            self.config.groups,
+            tuple(
+                group
+                for group in self.config.groups
+                if self._provision_backoff.get(z2m_group_name(group.name), 0)
+                <= self._clock.now()
+            ),
             directory,
             catalog,
             self._powered_lights(),
             frozenset(self._options_ready),
             self._pending_groups,
         )
+
+    def _defer_provision(self, name: str) -> None:
+        """Retry metadata maintenance after backoff, allowing other groups through."""
+        self._provision_backoff[name] = self._clock.now() + 10
+        self._provision_again = True
+        if self._provision_retry_task is None or self._provision_retry_task.done():
+            self._provision_retry_task = asyncio.create_task(self._retry_provision())
+
+    async def _retry_provision(self) -> None:
+        while self._provision_backoff and not self._closed:
+            await self._clock.sleep(
+                max(0, min(self._provision_backoff.values()) - self._clock.now())
+            )
+            self._provision_backoff = {
+                name: deadline
+                for name, deadline in self._provision_backoff.items()
+                if deadline > self._clock.now()
+            }
+            self._schedule_provision()
 
     def _sync_group_ids(self) -> None:
         updated = []
@@ -864,6 +936,12 @@ class Runtime:
         request_bridge = getattr(self.adapter, "request_bridge", None)
         if request_bridge is None:
             return
+        name = str(
+            action.payload.get(
+                "group", action.payload.get("friendly_name", action.payload.get("id"))
+            )
+        )
+        version = self.adapter.topology.version
         request = asyncio.create_task(request_bridge(action.path, action.payload))
         timer = asyncio.create_task(self._clock.sleep(10))
         try:
@@ -878,10 +956,16 @@ class Runtime:
             await asyncio.gather(request, timer, return_exceptions=True)
         if request.cancelled() or request not in done:
             self.group_error = "bridge request timed out"
+            self._defer_provision(name)
             return
-        response = request.result()
+        try:
+            response = request.result()
+        except RuntimeError, ValueError, TypeError:
+            self._defer_provision(name)
+            raise
         if not isinstance(response, dict) or response.get("status") != "ok":
             self.group_error = "bridge request rejected"
+            self._defer_provision(name)
             return
         data = response.get("data")
         advanced = False
@@ -890,6 +974,7 @@ class Runtime:
             assigned = data.get("id")
             if isinstance(friendly, str) and type(assigned) is int:
                 self._pending_groups[friendly] = assigned
+                self._options_ready.discard(friendly)
                 advanced = True
         if action.path == "group/options" and options_confirmed(response):
             group_name = action.payload.get("id")
@@ -898,10 +983,15 @@ class Runtime:
                 advanced = True
         if action.path in {"group/members/add", "group/members/remove"}:
             # The republished group catalog is the source of truth for membership.
+            if self.adapter.topology.version == version:
+                self._defer_provision(name)
+            else:
+                self._provision_again = True
             self.group_error = None
             return
         if not advanced:
             self.group_error = "bridge request rejected"
+            self._defer_provision(name)
             return
         self.group_error = None
         self._provision_again = True
@@ -911,6 +1001,10 @@ class Runtime:
             return
         self._closed = True
         self.adapter.set_active(False)
+        retry = self._provision_retry_task
+        if retry is not None and not retry.done():
+            retry.cancel()
+            await asyncio.gather(retry, return_exceptions=True)
         task = self._provision_task
         if task is not None and not task.done():
             task.cancel()
