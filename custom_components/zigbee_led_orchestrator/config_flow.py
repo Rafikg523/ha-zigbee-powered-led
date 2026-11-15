@@ -18,7 +18,6 @@ from .const import DOMAIN
 from .group_provisioner import normalize_group_name, z2m_group_name
 from .light_capabilities import LightCapabilities
 from .management import find, group_of
-from .models import ControlMode
 from .topology import Topology, validate_topology
 
 _POLICY_DEFAULTS = (
@@ -27,43 +26,21 @@ _POLICY_DEFAULTS = (
     ("boot_grace_ms", 2500),
     ("readiness_timeout_ms", 8000),
 )
-_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group", "control")
+_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group")
 _MENU_LABELS = {
     "en": {
         "add_circuit": "Add circuit",
         "create_group": "Create group",
         "edit_circuit": "Edit circuit",
         "edit_group": "Edit group",
-        "control": "Control mode",
     },
     "pl": {
         "add_circuit": "Dodaj obwód",
         "create_group": "Utwórz grupę",
         "edit_circuit": "Edytuj obwód",
         "edit_group": "Edytuj grupę",
-        "control": "Tryb sterowania",
     },
 }
-
-
-def control_error(exc: Exception) -> str:
-    """Map a refused activation to a specific options-flow error."""
-    if isinstance(exc, AttributeError):
-        return "runtime_not_running"
-    if isinstance(exc, ValueError):
-        return "mapping_mismatch"
-    if isinstance(exc, RuntimeError):
-        text = str(exc)
-        if text.startswith("topology changed"):
-            return "topology_stale"
-        if text.startswith("configured devices"):
-            return "devices_missing"
-        if text.startswith("report extension"):
-            return "report_extension_unavailable"
-        if text.startswith("invalid") or "closed" in text:
-            return "runtime_not_running"
-        return "bridge_unavailable"
-    return "control_unavailable"
 
 
 def menu_options_for(language: str) -> dict[str, str]:
@@ -402,7 +379,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlow(config_entries.OptionsFlow):
-    """Change mode or append one circuit without a second integration entry."""
+    """Add or edit circuits and groups without a second integration entry."""
 
     async def async_step_init(self, user_input=None):
         return await self.async_step_choose(user_input)
@@ -411,24 +388,6 @@ class OptionsFlow(config_entries.OptionsFlow):
         return self.async_show_menu(
             step_id="choose",
             menu_options=menu_options_for(self.hass.config.language),
-        )
-
-    async def async_step_control(self, user_input=None):
-        errors = {}
-        if user_input is not None:
-            try:
-                self.config_entry.runtime_data.set_mode(
-                    ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE,
-                    manual=True,
-                )
-            except (RuntimeError, ValueError, AttributeError) as exc:
-                errors["base"] = control_error(exc)
-            else:
-                return self.async_create_entry(data={"active": user_input["active"]})
-        return self.async_show_form(
-            step_id="control",
-            data_schema=vol.Schema({vol.Required("active", default=False): bool}),
-            errors=errors,
         )
 
     async def async_step_add_circuit(self, user_input=None):

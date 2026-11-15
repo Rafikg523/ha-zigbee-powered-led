@@ -25,7 +25,6 @@ async def pilot(rig):
         {"session": session, "sequence": 0, "type": "ready"},
     )
     await rig.settle()
-    await rig.enable_active()
     sequence = 0
 
     async def raw(ieee, cluster, data, *, retain=False, endpoint=1):

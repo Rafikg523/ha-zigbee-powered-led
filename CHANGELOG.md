@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — konfiguracja bez trybu sterowania
+
+- Z menu **Konfiguruj** znika pozycja Tryb sterowania. Zostają dodawanie i edycja obwodów oraz grup.
+- Sterowanie włącza się samo, gdy mostek Zigbee2MQTT jest online i w katalogu jest choć jeden zapisany obwód. Stare ON nie jest odtwarzane.
+- Ręczne zatrzymanie zostaje przy usłudze `pause` i wraca przez `resume`.
+- Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.3.1`. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
 ## 0.3.0 — lista obwodów i grup z edycją i usuwaniem
 
 - Każdy obwód i każda grupa jest osobnym urządzeniem na stronie integracji (model „Obwód LED” albo „Grupa obwodów”). Strona urządzenia obwodu zbiera jego światło oraz diagnostykę: Faza, Stan rzeczywisty, Potwierdzone. Ołówek zmienia nazwę i obszar urządzenia.

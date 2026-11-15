@@ -1,10 +1,10 @@
-"""Loaded entry must enter ACTIVE after a routine Zigbee2MQTT catalog refresh.
+"""Loaded entry must stay ACTIVE after a routine Zigbee2MQTT catalog refresh.
 
 Z2M republishes bridge/devices on announce, interview and network-address
-changes. That refresh is not a new mapping. It must not sticky-fail the next
-explicit ACTIVE, and it must not replay an old ON.
+changes. That refresh is not a new mapping and must not replay an old ON.
 """
 
+import pytest
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.zigbee_led_orchestrator.models import ControlMode
@@ -43,10 +43,6 @@ async def test_loaded_entry_stays_active_when_devices_are_republished(rig):
     assert rig.adapters[-1].topology.resolve_group(1).members
     assert rig.runtime.snapshot("light_a").desired.on is True
     assert rig.publications() == published
-    result = await rig.enable_active()
-    assert result["type"] == "create_entry"
-    assert rig.runtime.mode == ControlMode.ACTIVE
-    assert rig.publications() == published
 
 
 async def test_unready_report_extension_does_not_stick_after_catalog_refresh(rig):
@@ -54,13 +50,13 @@ async def test_unready_report_extension_does_not_stick_after_catalog_refresh(rig
     config["report_extension"] = True
     await rig.setup(config)
     await rig.publish_catalog()
-    refused = await rig.enable_active()
-    assert refused["type"] == "form"
-    assert refused["errors"]["base"] == "report_extension_unavailable"
+    with pytest.raises(RuntimeError, match="report extension unavailable"):
+        rig.runtime.set_mode(ControlMode.ACTIVE)
     assert rig.runtime.mode == ControlMode.OBSERVE
 
     rig.fire("zigbee2mqtt/bridge/devices", rig.pilot["devices"], retain=False)
     await rig.settle()
+    assert rig.runtime.mode == ControlMode.OBSERVE
     handshake = next(
         payload
         for topic, payload in reversed(rig.publications())
@@ -72,8 +68,6 @@ async def test_unready_report_extension_does_not_stick_after_catalog_refresh(rig
     )
     await rig.settle()
     published = list(rig.publications())
-    enabled = await rig.enable_active()
-    assert enabled["type"] == "create_entry"
     assert rig.runtime.mode == ControlMode.ACTIVE
     assert rig.runtime.diagnostics()["topology_stale"] is False
     assert rig.publications() == published
@@ -107,9 +101,9 @@ async def test_every_missing_device_stays_inactive(rig):
     await rig.settle()
     assert rig.runtime.mode == ControlMode.OBSERVE
     assert "catalog" in rig.runtime.notices
-    result = await rig.enable_active()
-    assert result["type"] == "form"
-    assert result["errors"]["base"] == "devices_missing"
+    with pytest.raises(RuntimeError, match="configured devices missing"):
+        rig.runtime.set_mode(ControlMode.ACTIVE)
+    assert rig.runtime.mode == ControlMode.OBSERVE
     assert rig.publications() == []
 
 
@@ -119,8 +113,7 @@ async def test_bridge_offline_is_not_a_topology_error(rig):
     await rig.settle()
     rig.fire("zigbee2mqtt/bridge/groups", rig.pilot["groups"], retain=True)
     await rig.settle()
-    result = await rig.enable_active()
-    assert result["type"] == "form"
-    assert result["errors"]["base"] == "bridge_unavailable"
+    with pytest.raises(RuntimeError, match="bridge offline"):
+        rig.runtime.set_mode(ControlMode.ACTIVE)
     assert rig.runtime.mode == ControlMode.OBSERVE
     assert rig.publications() == []
