@@ -28,20 +28,12 @@
     "step": {
       "choose": {
         "title": "Konfiguracja",
-        "description": "Dodaj lub edytuj obwód albo grupę, albo zmień tryb sterowania. Każdy obwód i każda grupa jest urządzeniem na stronie integracji: otwórz je, aby zobaczyć diagnostykę, ołówkiem zmień nazwę lub obszar, a usuń z menu urządzenia. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Dodaj lub edytuj obwód albo grupę. Każdy obwód i każda grupa jest urządzeniem na stronie integracji: otwórz je, aby zobaczyć diagnostykę, ołówkiem zmień nazwę lub obszar, a usuń z menu urządzenia. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "menu_options": {
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
           "edit_circuit": "Edytuj obwód",
-          "edit_group": "Edytuj grupę",
-          "control": "Tryb sterowania"
-        }
-      },
-      "control": {
-        "title": "Tryb sterowania",
-        "description": "Sterowanie włącza się, gdy mostek Zigbee2MQTT jest online i zapisane obwody są w katalogu. Brakujący obwód dostaje powiadomienie w Home Assistant, a pozostałe działają dalej. Wyłączenie tutaj zostawia sterowanie wyłączone, dopóki nie włączysz go ponownie. Stare ON nie jest odtwarzane.",
-        "data": {
-          "active": "Włącz aktywne sterowanie"
+          "edit_group": "Edytuj grupę"
         }
       },
       "add_circuit": {
@@ -94,13 +86,6 @@
       }
     },
     "error": {
-      "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
-      "topology_stale": "Katalog Zigbee2MQTT zmienił się dla tych obwodów. Użyj resync, a potem włącz sterowanie ponownie. Poprzednie ON nie jest odtwarzane.",
-      "mapping_mismatch": "Zapisane mapowanie nie zgadza się z katalogiem Zigbee2MQTT. Sprawdź urządzenia, endpointy i kanały przekaźników.",
-      "runtime_not_running": "Integracja nie jest uruchomiona. Uruchom ponownie Home Assistant i spróbuj jeszcze raz.",
-      "bridge_unavailable": "Połączenie MQTT albo mostek Zigbee2MQTT jest offline. Sterowanie pozostaje wyłączone, dopóki mostek nie będzie online.",
-      "report_extension_unavailable": "Rozszerzenie raportów Zigbee2MQTT nie jest gotowe. Sprawdź report_extension_ready w diagnostyce i użyj resync po załadowaniu rozszerzenia.",
-      "devices_missing": "Żaden skonfigurowany obwód nie jest w katalogu Zigbee2MQTT. Sterowanie zostaje wyłączone, dopóki któryś nie wróci.",
       "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
       "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
       "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
@@ -141,7 +126,7 @@
     },
     "resync": {
       "name": "Zsynchronizuj katalog ponownie",
-      "description": "Odrzuć obserwacje i ponownie odczytaj katalog Zigbee2MQTT. Potem trzeba ponownie włączyć sterowanie.",
+      "description": "Odrzuć obserwacje i ponownie odczytaj katalog Zigbee2MQTT. Sterowanie włącza się samo, gdy mostek i katalog wrócą. Stare ON nie jest odtwarzane.",
       "fields": {
         "config_entry_id": {
           "name": "Wpis konfiguracji",

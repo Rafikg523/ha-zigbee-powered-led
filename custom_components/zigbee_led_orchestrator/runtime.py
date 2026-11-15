@@ -91,7 +91,6 @@ class Runtime:
         self._signatures: dict[str, tuple | None] = {}
         self._absent: set[str] = set()
         self._absent_groups: set[str] = set()
-        self._user_inactive = False
         self._language = "en"
         self.notices: dict[str, str] = {}
         self._notice_listener: Callable[[str, str | None], None] | None = None
@@ -309,7 +308,7 @@ class Runtime:
         self._absent_groups = set(absent_groups)
 
     def _maybe_arm(self) -> None:
-        if self._closed or self._user_inactive or self.mode == ControlMode.PAUSED:
+        if self._closed or self.mode == ControlMode.PAUSED:
             return
         configured = {light.id for light in self.config.lights}
         if self.mode == ControlMode.ACTIVE:
@@ -462,11 +461,9 @@ class Runtime:
         engine.subscribe(self._announce)
         return engine
 
-    def set_mode(self, mode: ControlMode, *, manual: bool = False) -> None:
+    def set_mode(self, mode: ControlMode) -> None:
         if self._closed or not isinstance(mode, ControlMode):
             raise RuntimeError("invalid or closed runtime")
-        if manual:
-            self._user_inactive = mode != ControlMode.ACTIVE
         if mode == ControlMode.ACTIVE:
             bridge = getattr(self.adapter, "bridge_online", None)
             if self._observations.bridge_online is False or bridge is False:

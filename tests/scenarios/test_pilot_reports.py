@@ -44,7 +44,6 @@ async def test_raw_reports_drive_on_and_physical_off_without_replay(rig):
     await raw(relay, 1, "genOnOff", {"onOff": 0})
     await raw(relay, 2, "genOnOff", {"onOff": 0})
     await rig.advance(1)
-    await rig.enable_active()
     assert rig.runtime.mode == ControlMode.ACTIVE
     await rig.light("turn_on", "light_a", brightness=180, color_temp_kelvin=3000)
     await rig.advance(0.01)

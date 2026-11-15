@@ -85,7 +85,7 @@ W MVP plan obejmuje dwie lampy i jedną grupę z dedykowanymi kanałami. Trzy gr
 
 - Zapisywane są tylko jasność i CCT, po zmianie parametrów (opóźniony zapis). Odtworzenie następuje przed jakimkolwiek sterowaniem, w trybie OBSERVE, i nie zmienia `on`.
 - `pause` zapamiętuje poprzedni tryb i ustawia żądany stan OFF bez publikacji. `resume` przywraca ten tryb, nie odtwarza starej intencji i nie awansuje OBSERVE do ACTIVE.
-- `resync` zamyka silnik i koordynatora, unieważnia dowody i ponownie subskrybuje katalog MQTT; nie publikuje `/set`. Gdy mostek i katalog wrócą, sterowanie włącza się samo i nie odtwarza ON. Jawne wyłączenie w opcjach zostaje wyłączone.
+- `resync` zamyka silnik i koordynatora, unieważnia dowody i ponownie subskrybuje katalog MQTT; nie publikuje `/set`. Gdy mostek i katalog wrócą, sterowanie włącza się samo i nie odtwarza ON. Pauza zostaje pauzą do `resume`.
 - Eksport diagnostyczny zastępuje IEEE, tematy, nazwy i identyfikatory konfiguracji aliasami.
 
 ### Bariera grupy (P11)

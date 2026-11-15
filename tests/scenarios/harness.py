@@ -136,17 +136,6 @@ class Rig:
         self.fire(LED[light], payload, retain=retain)
         await self.settle()
 
-    async def enable_active(self) -> dict:
-        result = await self.hass.config_entries.options.async_init(self.entry.entry_id)
-        result = await self.hass.config_entries.options.async_configure(
-            result["flow_id"], {"next_step_id": "control"}
-        )
-        result = await self.hass.config_entries.options.async_configure(
-            result["flow_id"], {"active": True}
-        )
-        await self.settle()
-        return result
-
     async def set_connection(self, connected: bool) -> None:
         """Change HA's MQTT connection state and notify the adapter's callback."""
         self.hass.data["mqtt"].client.connected = connected
@@ -207,11 +196,10 @@ class Rig:
         return self.runtime.snapshot(light_id).phase.value
 
     async def boot_to_off(self) -> None:
-        """Catalog + OFF reports + explicit ACTIVE; nothing published."""
+        """Catalog and OFF reports leave control on and publish nothing."""
         await self.publish_catalog()
         await self.report_relay("OFF", "OFF")
         await self.advance(1)
-        await self.enable_active()
         assert self.publications() == []
         assert self.runtime.mode == ControlMode.ACTIVE
 

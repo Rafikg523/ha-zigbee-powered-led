@@ -102,8 +102,6 @@ async def test_named_group_is_created_and_group_state_does_not_change_intent(rig
     await rig.advance(0.01)
     await rig.report_relay("OFF", "OFF")
     await rig.advance(0.5)
-    result = await rig.enable_active()
-    assert result["type"] == "create_entry"
     assert rig.runtime.mode == ControlMode.ACTIVE
 
     before = len(rig.publications())
@@ -157,8 +155,6 @@ async def test_incomplete_membership_controls_members_individually(rig):
     await rig.settle()
     await rig.report_relay("OFF", "OFF")
     await rig.advance(0.5)
-    result = await rig.enable_active()
-    assert result["type"] == "create_entry"
     assert rig.runtime.mode == ControlMode.ACTIVE
     assert rig.state("group_a").state == "unavailable"
     await rig.light("turn_on", "light_a", brightness=180)
