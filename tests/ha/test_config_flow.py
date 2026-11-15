@@ -204,6 +204,8 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert menu["menu_options"] == {
         "add_circuit": "Add circuit",
         "create_group": "Create group",
+        "edit_circuit": "Edit circuit",
+        "edit_group": "Edit group",
         "control": "Control mode",
     }
     form = await flow.async_step_add_circuit()
@@ -250,9 +252,17 @@ def test_menu_labels_follow_the_ha_language():
     assert menu_options_for("pl") == {
         "add_circuit": "Dodaj obwód",
         "create_group": "Utwórz grupę",
+        "edit_circuit": "Edytuj obwód",
+        "edit_group": "Edytuj grupę",
         "control": "Tryb sterowania",
     }
-    assert list(menu_options_for("de")) == ["add_circuit", "create_group", "control"]
+    assert list(menu_options_for("de")) == [
+        "add_circuit",
+        "create_group",
+        "edit_circuit",
+        "edit_group",
+        "control",
+    ]
 
 
 def _two_pairs():

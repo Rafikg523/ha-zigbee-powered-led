@@ -4,20 +4,27 @@ from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 
-from .entity import RuntimeDiagnosticEntity
+from .entity import RuntimeDiagnosticEntity, virtual_device
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     runtime = entry.runtime_data
     async_add_entities(
-        ConfirmedSensor(runtime, entry.entry_id, light.id)
+        ConfirmedSensor(
+            runtime,
+            entry.entry_id,
+            light.id,
+            virtual_device(
+                entry.entry_id, light.id, light.name, "circuit", hass.config.language
+            ),
+        )
         for light in runtime.config.lights
     )
 
 
 class ConfirmedSensor(RuntimeDiagnosticEntity, BinarySensorEntity):
-    def __init__(self, runtime, entry_id: str, light_id: str) -> None:
-        super().__init__(runtime, entry_id, light_id, "confirmed")
+    def __init__(self, runtime, entry_id: str, light_id: str, device=None) -> None:
+        super().__init__(runtime, entry_id, light_id, "confirmed", device)
 
     @property
     def is_on(self) -> bool:
