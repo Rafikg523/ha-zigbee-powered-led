@@ -64,6 +64,9 @@ def _intersect(ranges):
     return (low, high) if low <= high else None
 
 
+GROUP_CHANGE_TIMEOUT_S = 60
+
+
 class Runtime:
     """Own a single reconciler and revoke its authority on topology changes."""
 
@@ -88,7 +91,6 @@ class Runtime:
         self._signatures: dict[str, tuple | None] = {}
         self._absent: set[str] = set()
         self._absent_groups: set[str] = set()
-        self._user_inactive = False
         self._language = "en"
         self.notices: dict[str, str] = {}
         self._notice_listener: Callable[[str, str | None], None] | None = None
@@ -101,6 +103,7 @@ class Runtime:
         self._pending_groups: dict[str, int] = {}
         self._provision_task: asyncio.Task | None = None
         self._provision_again = False
+        self._held_groups: set[str] = set()
 
     async def start(self) -> None:
         self._remove_topology = self.adapter.subscribe_topology(self._topology_changed)
@@ -305,7 +308,7 @@ class Runtime:
         self._absent_groups = set(absent_groups)
 
     def _maybe_arm(self) -> None:
-        if self._closed or self._user_inactive or self.mode == ControlMode.PAUSED:
+        if self._closed or self.mode == ControlMode.PAUSED:
             return
         configured = {light.id for light in self.config.lights}
         if self.mode == ControlMode.ACTIVE:
@@ -458,11 +461,9 @@ class Runtime:
         engine.subscribe(self._announce)
         return engine
 
-    def set_mode(self, mode: ControlMode, *, manual: bool = False) -> None:
+    def set_mode(self, mode: ControlMode) -> None:
         if self._closed or not isinstance(mode, ControlMode):
             raise RuntimeError("invalid or closed runtime")
-        if manual:
-            self._user_inactive = mode != ControlMode.ACTIVE
         if mode == ControlMode.ACTIVE:
             bridge = getattr(self.adapter, "bridge_online", None)
             if self._observations.bridge_online is False or bridge is False:
@@ -832,7 +833,7 @@ class Runtime:
             if name in present:
                 del self._pending_groups[name]
         return next_group_action(
-            self.config.groups,
+            tuple(g for g in self.config.groups if g.id not in self._held_groups),
             directory,
             catalog,
             self._powered_lights(),
@@ -905,6 +906,37 @@ class Runtime:
             return
         self.group_error = None
         self._provision_again = True
+
+    def catalog_group(self, name: str):
+        """Return the Zigbee2MQTT group owned under ``name``, or None."""
+        topology = self.adapter.topology
+        if not getattr(topology, "groups_seen", False):
+            raise RuntimeError("group catalog unavailable")
+        return topology.group_named(z2m_group_name(name))
+
+    async def change_group(self, group_id: str, path: str, payload: dict) -> None:
+        """Send one owner-requested group change and wait for Zigbee2MQTT.
+
+        Provisioning skips the group from the request onwards, so it cannot
+        recreate or refill it. The hold is released only when Zigbee2MQTT
+        refuses; after a confirmed change the entry reloads, and after a timeout
+        the outcome is unknown, so the group stays untouched until the reload.
+        """
+        if self._closed:
+            raise RuntimeError("runtime closed")
+        self._held_groups.add(group_id)
+        try:
+            async with asyncio.timeout(GROUP_CHANGE_TIMEOUT_S):
+                response = await self.adapter.request_bridge(path, payload)
+        except TimeoutError:
+            raise
+        except BaseException:
+            self._held_groups.discard(group_id)
+            raise
+        if not isinstance(response, dict) or response.get("status") != "ok":
+            self._held_groups.discard(group_id)
+            error = response.get("error") if isinstance(response, dict) else None
+            raise RuntimeError(str(error or "bridge request rejected"))
 
     async def close(self) -> None:
         if self._closed:

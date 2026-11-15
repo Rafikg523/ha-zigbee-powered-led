@@ -179,14 +179,23 @@ async def test_platform_creates_entities_for_configured_lights_and_group():
     runtime.config = validate_config(valid_config())
     entry = SimpleNamespace(entry_id="entry-123", runtime_data=runtime)
     entities = []
-    await async_setup_entry(None, entry, entities.extend)
+    hass = SimpleNamespace(config=SimpleNamespace(language="en"))
+    await async_setup_entry(hass, entry, entities.extend)
     assert len(entities) == 3
     assert {entity.unique_id for entity in entities} == {
         "entry-123_light_a",
         "entry-123_light_b",
         "entry-123_group_a",
     }
-    assert {entity.name for entity in entities} >= {"Light A", "Light B"}
+    assert {entity.device_info["name"] for entity in entities} >= {
+        "Light A",
+        "Light B",
+    }
+    assert {entity.device_info["model"] for entity in entities} == {
+        "LED circuit",
+        "Circuit group",
+    }
+    assert all(entity.name is None for entity in entities)
 
 
 async def test_capabilities_follow_verified_runtime_metadata(light, monkeypatch):

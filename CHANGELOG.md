@@ -3,8 +3,24 @@
 ## 0.3.2 — nazwa nowego obwodu kończy się na _orchestrator
 
 - Przy dodawaniu obwodu nazwa dostaje końcówkę `_orchestrator`. `Kuchnia` zapisuje encję `Kuchnia_orchestrator`. Wpisanie `Kuchnia_orchestrator` nie podwaja końcówki. Ta sama nazwa, już z końcówką albo bez niej, jest odrzucana jako zajęta.
-- Obwody zapisane wcześniej zostają przy swoich nazwach. Samo aktualizowanie ich nie przemianowuje.
+- Obwody zapisane wcześniej zostają przy swoich nazwach. Samo aktualizowanie ich nie przemianowuje. Edycja zapisuje nazwę tak, jak ją wpiszesz.
 - To zwykłe wydanie, bez przyrostka. Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.3.2`. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
+## 0.3.1 — konfiguracja bez trybu sterowania
+
+- Z menu **Konfiguruj** znika pozycja Tryb sterowania. Zostają dodawanie i edycja obwodów oraz grup.
+- Sterowanie włącza się samo, gdy mostek Zigbee2MQTT jest online i w katalogu jest choć jeden zapisany obwód. Stare ON nie jest odtwarzane.
+- Ręczne zatrzymanie zostaje przy usłudze `pause` i wraca przez `resume`.
+- Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.3.1`. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
+## 0.3.0 — lista obwodów i grup z edycją i usuwaniem
+
+- Każdy obwód i każda grupa jest osobnym urządzeniem na stronie integracji (model „Obwód LED” albo „Grupa obwodów”). Strona urządzenia obwodu zbiera jego światło oraz diagnostykę: Faza, Stan rzeczywisty, Potwierdzone. Ołówek zmienia nazwę i obszar urządzenia.
+- **Konfiguruj → Edytuj obwód** zmienia nazwę, kontroler albo kanał zasilania. Identyfikatory encji i historia zostają. Obwód w grupie zachowuje kontroler i kanał, dopóki nie wyjdzie z grupy.
+- **Konfiguruj → Edytuj grupę** zmienia nazwę i skład. Nowa nazwa zmienia nazwę grupy w Zigbee2MQTT bez zmiany jej identyfikatora Zigbee. Obwód usunięty z grupy wychodzi z niej w Zigbee2MQTT, a dodany do niej wchodzi, gdy jego kontroler będzie zasilony. Integracja nie włącza w tym celu zasilania.
+- Usunięcie urządzenia (⋮ → Usuń) usuwa obwód razem z jego kanałem albo grupę. Obwodu należącego do grupy nie da się usunąć. Grupa jest najpierw usuwana w Zigbee2MQTT i znika z konfiguracji dopiero po potwierdzeniu. Odmowa albo brak odpowiedzi zostawia ją bez zmian.
+- Identyfikatory encji (`light.…`, `sensor.…`) w istniejących instalacjach zostają. Wyświetlana nazwa światła jest teraz nazwą jego urządzenia, chyba że wcześniej zmieniłeś ją ręcznie.
+- Po aktualizacji uruchom ponownie cały Home Assistant i odśwież kartę przeglądarki. `zigbee_led_orchestrator.diagnose` ma pokazać `runtime_version: 0.3.0`.
 
 ## 0.2.0 — sterowanie wraca samo, brak jednego urządzenia nie gasi reszty
 

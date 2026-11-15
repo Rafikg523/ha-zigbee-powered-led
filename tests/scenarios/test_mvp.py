@@ -257,7 +257,6 @@ async def test_t10_restart_with_relay_off_never_turns_on(ready, hass_storage):
     light = rig.runtime.snapshot("light_a")
     assert light.desired.on is False
     assert (light.desired.brightness, light.desired.color_temp_kelvin) == (120, 3000)
-    await rig.enable_active()
     await rig.advance(30)
     assert rig.publications() == []
     assert rig.runtime.snapshot("light_a").desired.on is False

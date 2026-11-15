@@ -32,13 +32,13 @@ Standardowe MQTT Z2M może zawierać stan z cache i optymistyczną odpowiedź. W
 3. W HA dodaj integrację z zaznaczonym rozszerzeniem albo użyj usługi `zigbee_led_orchestrator.resync` po załadowaniu rozszerzenia. Jako `config_entry_id` wybierz wpis integracji w formularzu usługi.
 4. Pobierz diagnostykę wpisu lub użyj `zigbee_led_orchestrator.diagnose`. Sprawdź `report_extension_enabled: true`, `report_extension_ready: true` i `bridge_online: true`.
 
-Integracja wysyła w OBSERVE wyłącznie metadane sesji na `<base>/orchestrator/subscribe`; rozszerzenie odpowiada na `<base>/orchestrator/report`. Żadna z tych wiadomości nie jest `/set`, `/get` ani odczytem Zigbee. Nonce sesji i numer kolejny odrzucają poprzednie sesje, duplikaty i retained raporty. Luka w sekwencji może ukrywać fizyczne OFF: integracja wstrzymuje wtedy sterowanie, czyści dowody i wymaga resync oraz ponownego ACTIVE. Kanał dowodowy powinien być dostępny do publikacji tylko zaufanemu Z2M; broker i jego uprawnienia są granicą zaufania.
+Integracja wysyła w OBSERVE wyłącznie metadane sesji na `<base>/orchestrator/subscribe`; rozszerzenie odpowiada na `<base>/orchestrator/report`. Żadna z tych wiadomości nie jest `/set`, `/get` ani odczytem Zigbee. Nonce sesji i numer kolejny odrzucają poprzednie sesje, duplikaty i retained raporty. Luka w sekwencji może ukrywać fizyczne OFF: integracja wstrzymuje wtedy sterowanie, czyści dowody i wymaga resync. Gdy mostek i katalog wrócą, sterowanie włącza się samo. Kanał dowodowy powinien być dostępny do publikacji tylko zaufanemu Z2M; broker i jego uprawnienia są granicą zaufania.
 
 Obsługiwane raporty: `genOnOff.onOff`, `genLevelCtrl.currentLevel`, `lightingColorCtrl.colorTemperature`. Jeśli urządzenie używa innego protokołu, raportów może brakować: pozostaw OBSERVE i zachowaj zredagowaną diagnostykę. Nie zastępuj potwierdzenia trybem optimistic. Raport urządzenia nie jest pomiarem emisji światła.
 
 ## 4. Na miejscu włącz próby
 
-Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowania i wyłączeniu konkurujących nadawców sterowanie włącza się samo, gdy mostek jest online i obwody są w katalogu. Włączenie nie odtwarza wcześniejszego ON. Po restarcie HA, powrocie mostka albo resync nie trzeba włączać go ponownie. Jawne wyłączenie w **Konfiguruj → Tryb sterowania** zostaje wyłączone, dopóki nie włączysz go ręcznie.
+Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowania i wyłączeniu konkurujących nadawców sterowanie włącza się samo, gdy mostek jest online i obwody są w katalogu. Włączenie nie odtwarza wcześniejszego ON. Po restarcie HA, powrocie mostka albo resync włącza się samo. Ręczne zatrzymanie jest w usłudze `pause` i wraca przez `resume`.
 
 Od wersji 0.1.0b5, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
 
@@ -46,7 +46,7 @@ Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę prz
 
 ## Powrót do poprzedniego sterowania
 
-Zapisz przed próbą stany włączenia automatyzacji i dokładną listę wyłączonych ścieżek. W razie problemu użyj `pause` (wstrzymuje publikacje; nie odcina fizycznie zasilania) lub wyłącz aktywne sterowanie. Zweryfikuj zakończenie komend już w locie, aktualny stan i brak dalszych `/set`. W razie potrzeby użyj fizycznego wyłącznika. Następnie przywróć wyłącznie ścieżki, które były wcześniej aktywne. Samo odinstalowanie integracji nie przywraca automatyzacji ani nie cofa nadanych komend.
+Zapisz przed próbą stany włączenia automatyzacji i dokładną listę wyłączonych ścieżek. W razie problemu użyj `pause` (wstrzymuje publikacje; nie odcina fizycznie zasilania). Zweryfikuj zakończenie komend już w locie, aktualny stan i brak dalszych `/set`. W razie potrzeby użyj fizycznego wyłącznika. Następnie przywróć wyłącznie ścieżki, które były wcześniej aktywne. Samo odinstalowanie integracji nie przywraca automatyzacji ani nie cofa nadanych komend.
 
 Usunięcie rozszerzenia Z2M zatrzymuje przekazywanie raportów. Najpierw wstrzymaj integrację HA; rozszerzenie nie wymaga zmiany parametrów urządzeń.
 

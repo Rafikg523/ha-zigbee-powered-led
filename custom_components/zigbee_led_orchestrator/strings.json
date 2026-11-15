@@ -28,18 +28,12 @@
     "step": {
       "choose": {
         "title": "Configure",
-        "description": "Add a circuit, create a group from circuits you already added, or change the control mode. Saving a circuit or a group reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
+        "description": "Add or edit a circuit or group. Each circuit and group is a device on the integration page: open it to see its diagnostics, use the pencil to rename it or set its area, or delete it from the device menu. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "menu_options": {
           "add_circuit": "Add circuit",
           "create_group": "Create group",
-          "control": "Control mode"
-        }
-      },
-      "control": {
-        "title": "Control mode",
-        "description": "Control turns on when the Zigbee2MQTT bridge is online and the saved circuits are in the catalog. A missing circuit is reported in Home Assistant and the other circuits keep working. Turning this off keeps control off until you enable it again. An old ON is never replayed.",
-        "data": {
-          "active": "Enable active control"
+          "edit_circuit": "Edit circuit",
+          "edit_group": "Edit group"
         }
       },
       "add_circuit": {
@@ -58,27 +52,55 @@
           "name": "Group name",
           "members": "Circuits in this group"
         }
+      },
+      "edit_circuit": {
+        "title": "Edit circuit",
+        "description": "Select the circuit to change.",
+        "data": {
+          "circuit": "Circuit"
+        }
+      },
+      "circuit_details": {
+        "title": "Edit circuit {circuit}",
+        "description": "Change the name, controller or power channel. The light and its diagnostics keep their entity ids and history. A circuit in a group keeps its controller and channel; remove it from the group first. Saving reloads the integration.",
+        "data": {
+          "name": "Virtual entity name",
+          "light": "LED controller and endpoint",
+          "relay": "Power relay channel"
+        }
+      },
+      "edit_group": {
+        "title": "Edit group",
+        "description": "Select the group to change.",
+        "data": {
+          "group": "Group"
+        }
+      },
+      "group_details": {
+        "title": "Edit group {group}",
+        "description": "Change the name or the circuits in the group. A new name renames the Zigbee2MQTT group, which keeps its Zigbee id. A circuit removed from the group leaves it in Zigbee2MQTT and an added one joins it the next time its controller is powered; until then the group is unavailable and its circuits work on their own. No power is switched for this. Saving reloads the integration.",
+        "data": {
+          "name": "Group name",
+          "members": "Circuits in this group"
+        }
       }
     },
     "error": {
-      "control_unavailable": "Control is unavailable. Check bridge connectivity, mapping and report-extension diagnostics. Resync after a topology change.",
-      "topology_stale": "The Zigbee2MQTT catalog changed for these circuits. Run resync, then enable control again. Previous ON commands are not replayed.",
-      "mapping_mismatch": "The saved mapping does not match the Zigbee2MQTT catalog. Check devices, endpoints and relay channels.",
-      "runtime_not_running": "The integration is not running. Restart Home Assistant, then try again.",
-      "bridge_unavailable": "The MQTT connection or Zigbee2MQTT bridge is offline. Control stays off until the bridge is online.",
-      "report_extension_unavailable": "The Zigbee2MQTT report extension is not ready. Check report_extension_ready in diagnostics and run resync after loading the extension.",
-      "devices_missing": "None of the configured circuits are in the Zigbee2MQTT catalog. Control stays off until one of them returns.",
       "invalid_mapping": "The configuration or physical mapping is invalid.",
       "invalid_name": "The virtual entity name must be nonempty and have no surrounding spaces.",
       "invalid_group_name": "The group name is empty, too long, or contains characters Zigbee2MQTT cannot use.",
       "need_two_members": "Select at least two circuits for the group.",
       "already_mapped": "That name, controller, or relay channel is already used.",
-      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable."
+      "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
+      "circuit_in_group": "This circuit belongs to a group. Remove it from the group before changing its controller or channel.",
+      "group_rename_failed": "Zigbee2MQTT did not confirm the rename. Check that the bridge is online and try again."
     },
     "abort": {
       "catalog_unavailable": "The Zigbee2MQTT device and group catalog is unavailable.",
       "no_free_circuit": "Every discovered controller or relay channel is already mapped.",
-      "need_two_circuits": "Add at least two circuits that are not already in a group."
+      "need_two_circuits": "Add at least two circuits that are not already in a group.",
+      "no_circuits": "No circuits are configured yet.",
+      "no_groups": "No groups are configured yet."
     }
   },
   "services": {
@@ -104,7 +126,7 @@
     },
     "resync": {
       "name": "Resync catalog",
-      "description": "Discard observations and re-read the Zigbee2MQTT catalog. Control must be enabled again afterwards.",
+      "description": "Discard observations and re-read the Zigbee2MQTT catalog. Control turns on again when the bridge and catalog are back. An old ON is not replayed.",
       "fields": {
         "config_entry_id": {
           "name": "Config entry",
@@ -125,6 +147,35 @@
           "description": "Limit to one light."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "phase": {
+        "name": "Phase"
+      },
+      "effective_state": {
+        "name": "Effective state"
+      }
+    },
+    "binary_sensor": {
+      "confirmed": {
+        "name": "Confirmed"
+      }
+    }
+  },
+  "exceptions": {
+    "circuit_in_group": {
+      "message": "This circuit belongs to group {group}. Remove it from the group or delete the group first."
+    },
+    "runtime_not_running": {
+      "message": "The integration is not running. Restart Home Assistant, then try again."
+    },
+    "group_remove_failed": {
+      "message": "Zigbee2MQTT did not remove the group, so it is kept: {error}. Power the group's circuits so every controller can answer, then try again."
+    },
+    "group_remove_unknown": {
+      "message": "Zigbee2MQTT did not answer in time. The group is kept here and left alone. Try deleting it again in a moment."
     }
   }
 }

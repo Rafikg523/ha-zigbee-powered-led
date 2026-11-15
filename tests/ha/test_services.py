@@ -77,7 +77,7 @@ async def test_pause_resume_never_replays(setup):
 
 async def test_resume_never_promotes_observe_to_active(setup):
     hass, entry, runtime, adapter = setup
-    runtime.set_mode(ControlMode.OBSERVE, manual=True)
+    runtime.set_mode(ControlMode.OBSERVE)
     await call(hass, entry, "pause")
     assert runtime.mode == ControlMode.PAUSED
     await call(hass, entry, "resume")
