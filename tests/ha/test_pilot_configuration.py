@@ -60,7 +60,7 @@ async def test_configure_one_light_and_infer_temperature(hass, flow, monkeypatch
     )
     assert result["type"] == "create_entry"
     assert entry.data["groups"] == []
-    assert entry.data["lights"][0]["name"] == "Kuchnia"
+    assert entry.data["lights"][0]["name"] == "Kuchnia_orchestrator"
     assert entry.data["lights"][0]["min_kelvin"] == 2000
     assert entry.data["lights"][0]["max_kelvin"] == 6536
 
@@ -94,15 +94,12 @@ async def test_options_remain_accessible_before_entry_is_loaded(hass):
     entry.add_to_hass(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] == "menu"
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "control"}
-    )
-    assert result["type"] == "form"
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={"active": True}
-    )
-    assert result["type"] == "form"
-    assert result["errors"]["base"] == "runtime_not_running"
+    assert set(result["menu_options"]) == {
+        "add_circuit",
+        "create_group",
+        "edit_circuit",
+        "edit_group",
+    }
 
 
 async def test_setup_accepts_explicit_pilot_timing(flow):

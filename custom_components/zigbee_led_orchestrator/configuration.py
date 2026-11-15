@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import fields
 
-from .group_provisioner import normalize_group_name, z2m_group_name
+from .group_provisioner import SUFFIX, normalize_group_name, z2m_group_name
 from .models import (
     GroupConfig,
     LightConfig,
@@ -91,6 +91,17 @@ def circuit_label(light_id: str, name: object = None, *, path: str = "name") -> 
             f"{path} must be a nonempty string without surrounding whitespace"
         )
     return name
+
+
+def circuit_entity_name(value: object, *, path: str = "name") -> str:
+    """Return a new circuit name ending with ``_orchestrator`` exactly once."""
+    label = circuit_label("circuit", value, path=path)
+    base = label[: -len(SUFFIX)].rstrip() if label.endswith(SUFFIX) else label
+    if not base:
+        raise ValueError(
+            f"{path} must be a nonempty string without surrounding whitespace"
+        )
+    return f"{base}{SUFFIX}"
 
 
 def validate_config(data: Mapping[str, object]) -> OrchestratorConfig:

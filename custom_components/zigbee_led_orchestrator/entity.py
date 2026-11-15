@@ -13,16 +13,28 @@ from .const import DOMAIN
 if TYPE_CHECKING:
     from .runtime import Runtime
 
+MANUFACTURER = "Zigbee LED Orchestrator"
+_MODELS = {
+    "en": {"circuit": "LED circuit", "group": "Circuit group"},
+    "pl": {"circuit": "Obwód LED", "group": "Grupa obwodów"},
+}
 
-def device_info(
-    entry_id: str, item_id: str, name: str, *, group: bool = False
+
+def device_identifier(entry_id: str, item_id: str) -> tuple[str, str]:
+    """Registry identifier of the virtual device for one circuit or group."""
+    return (DOMAIN, f"{entry_id}_{item_id}")
+
+
+def virtual_device(
+    entry_id: str, item_id: str, name: str, kind: str, language: str
 ) -> DeviceInfo:
-    """Identify an orchestrated circuit or group independently of its hardware."""
+    """One device per configured circuit or group, listed on the entry page."""
+    code = "pl" if str(language).lower().startswith("pl") else "en"
     return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry_id}_{item_id}")},
+        identifiers={device_identifier(entry_id, item_id)},
         name=name,
-        manufacturer="Zigbee LED Orchestrator",
-        model="Group" if group else "Circuit",
+        manufacturer=MANUFACTURER,
+        model=_MODELS[code][kind],
     )
 
 
@@ -40,16 +52,26 @@ def _diagnostic_label(runtime: Runtime, light_id: str) -> str:
 class RuntimeDiagnosticEntity:
     """Report known diagnostics even while control is unavailable."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
 
-    def __init__(self, runtime: Runtime, entry_id: str, light_id: str, key: str):
+    def __init__(
+        self,
+        runtime: Runtime,
+        entry_id: str,
+        light_id: str,
+        key: str,
+        device_info: DeviceInfo | None = None,
+    ):
         self._runtime = runtime
         self._light_id = light_id
         self._attr_unique_id = f"{entry_id}_{light_id}_{key}"
+        if device_info is not None:
+            self._attr_device_info = device_info
+            self._attr_translation_key = key
+            return
         label = _diagnostic_label(runtime, light_id)
-        self._attr_device_info = device_info(entry_id, light_id, label)
         self._attr_name = f"{label} {key.replace('_', ' ')}"
 
     async def async_added_to_hass(self) -> None:

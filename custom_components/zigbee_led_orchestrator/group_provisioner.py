@@ -153,9 +153,9 @@ def _one(
         )
     for ieee, endpoint in sorted(current.members - expected):
         powered_owners = [
-            lights[light_id]
-            for light_id in group.members
-            if lights[light_id].ieee.lower() == ieee and light_id in powered
+            light
+            for light_id, light in lights.items()
+            if light.ieee.lower() == ieee and light_id in powered
         ]
         if not powered_owners:
             continue

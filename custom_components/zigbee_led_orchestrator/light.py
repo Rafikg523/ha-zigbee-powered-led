@@ -11,8 +11,9 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 
-from .entity import device_info
+from .entity import virtual_device
 from .group_provisioner import z2m_group_name
 from .models import IntentPatch
 
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Create entities from the validated runtime configuration."""
     runtime = entry.runtime_data
+    language = hass.config.language
     async_add_entities(
         OrchestratorLight(
             runtime,
@@ -31,6 +33,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             light.min_kelvin,
             light.max_kelvin,
             name=light.name,
+            device_info=virtual_device(
+                entry.entry_id, light.id, light.name, "circuit", language
+            ),
         )
         for light in runtime.config.lights
     )
@@ -44,6 +49,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             max(lights[item].min_kelvin for item in group.members),
             min(lights[item].max_kelvin for item in group.members),
             name=z2m_group_name(group.name),
+            device_info=virtual_device(
+                entry.entry_id,
+                group.id,
+                z2m_group_name(group.name),
+                "group",
+                language,
+            ),
         )
         for group in runtime.config.groups
     )
@@ -52,7 +64,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 class OrchestratorLight(LightEntity):
     """Represent desired state separately from physical observations."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -65,6 +77,7 @@ class OrchestratorLight(LightEntity):
         supports_color_temp: bool = False,
         supports_brightness: bool = False,
         name: str | None = None,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         self._runtime = runtime
         self._supports_color_temp = supports_color_temp
@@ -78,9 +91,9 @@ class OrchestratorLight(LightEntity):
         self._attr_supported_color_modes = {mode}
         self._light_id = light_id
         self._attr_name = name or light_id.replace("_", " ").title()
-        self._attr_device_info = device_info(
-            entry_id, light_id, name or light_id.replace("_", " ").title()
-        )
+        if device_info is not None:
+            self._attr_device_info = device_info
+            self._attr_name = None
         self._attr_unique_id = f"{entry_id}_{light_id}"
         self._config_min_kelvin = min_kelvin
         self._config_max_kelvin = max_kelvin
@@ -187,7 +200,7 @@ class OrchestratorLight(LightEntity):
 class OrchestratorGroupLight(LightEntity):
     """Group entity whose state is derived from its members' own intent."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -199,15 +212,16 @@ class OrchestratorGroupLight(LightEntity):
         max_kelvin: int,
         *,
         name: str | None = None,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         self._runtime = runtime
         self._group_id = group_id
         self._members = members
         self._attr_unique_id = f"{entry_id}_{group_id}"
         self._attr_name = name or group_id
-        self._attr_device_info = device_info(
-            entry_id, group_id, name or group_id, group=True
-        )
+        if device_info is not None:
+            self._attr_device_info = device_info
+            self._attr_name = None
         self._supports_brightness = False
         self._supports_color_temp = False
         self._config_min_kelvin = min_kelvin

@@ -12,7 +12,7 @@ from homeassistant.components import mqtt
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from .configuration import circuit_label, validate_config
+from .configuration import circuit_entity_name, circuit_label, validate_config
 from .const import DOMAIN
 from .group_provisioner import normalize_group_name, z2m_group_name
 from .light_capabilities import LightCapabilities
@@ -25,21 +25,19 @@ _POLICY_DEFAULTS = (
     ("boot_grace_ms", 2500),
     ("readiness_timeout_ms", 8000),
 )
-_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group", "control")
+_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group")
 _MENU_LABELS = {
     "en": {
         "add_circuit": "Add circuit",
         "create_group": "Create group",
         "edit_circuit": "Edit circuit",
         "edit_group": "Edit group",
-        "control": "Control mode",
     },
     "pl": {
         "add_circuit": "Dodaj obwód",
         "create_group": "Utwórz grupę",
         "edit_circuit": "Edytuj obwód",
         "edit_group": "Edytuj grupę",
-        "control": "Tryb sterowania",
     },
 }
 
@@ -117,7 +115,23 @@ def _require_name(value: object) -> str:
         raise ValueError(
             "name must be a nonempty string without surrounding whitespace"
         )
+    return circuit_entity_name(value, path="name")
+
+
+def _edited_name(value: object) -> str:
+    """Keep an edited label as typed. Only a new circuit gains the suffix."""
+    if value is None:
+        raise ValueError(
+            "name must be a nonempty string without surrounding whitespace"
+        )
     return circuit_label("circuit", value, path="name")
+
+
+def _name_key(name: str) -> str:
+    try:
+        return circuit_entity_name(name)
+    except ValueError:
+        return name
 
 
 def _split_light(token: object) -> tuple[str, int]:
@@ -140,8 +154,9 @@ def _stored_label(light: dict) -> str:
 
 def _pair_taken(data: dict, name: str, light: tuple[str, int], relay: tuple) -> bool:
     ieee, endpoint = light
+    wanted = _name_key(name)
     for item in data.get("lights", []):
-        if _stored_label(item) == name:
+        if _name_key(_stored_label(item)) == wanted:
             return True
         if item["device_ieee"].lower() == ieee and int(item["endpoint"]) == endpoint:
             return True
@@ -457,26 +472,6 @@ class OptionsFlow(config_entries.OptionsFlow):
             },
         )
 
-    async def async_step_control(self, user_input=None):
-        errors = {}
-        if user_input is not None:
-            try:
-                self.config_entry.runtime_data.set_mode(
-                    ControlMode.ACTIVE if user_input["active"] else ControlMode.OBSERVE,
-                    manual=True,
-                )
-            except (RuntimeError, ValueError, AttributeError) as exc:
-                errors["base"] = control_error(exc)
-            else:
-                return self.async_create_entry(
-                    data={**self.config_entry.options, "active": user_input["active"]}
-                )
-        return self.async_show_form(
-            step_id="control",
-            data_schema=vol.Schema({vol.Required("active", default=False): bool}),
-            errors=errors,
-        )
-
     async def async_step_edit_circuit(self, user_input=None):
         if self.config_entry.options.get("pending_group_operation"):
             return self.async_abort(reason="group_operation_pending")
@@ -488,7 +483,7 @@ class OptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_circuits")
         if user_input is not None and user_input.get("circuit") in choices:
             self._edit_circuit_id = user_input["circuit"]
-            return await self.async_step_edit_circuit_details()
+            return await self.async_step_circuit_details()
         return self.async_show_form(
             step_id="edit_circuit",
             data_schema=vol.Schema({vol.Required("circuit"): vol.In(choices)}),
@@ -503,13 +498,13 @@ class OptionsFlow(config_entries.OptionsFlow):
             return self.async_abort(reason="no_groups")
         if user_input is not None and user_input.get("group") in choices:
             self._edit_group_id = user_input["group"]
-            return await self.async_step_edit_group_details()
+            return await self.async_step_group_details()
         return self.async_show_form(
             step_id="edit_group",
             data_schema=vol.Schema({vol.Required("group"): vol.In(choices)}),
         )
 
-    async def async_step_edit_group_details(self, user_input=None):
+    async def async_step_group_details(self, user_input=None):
         from homeassistant.exceptions import HomeAssistantError
 
         from .group_management import async_edit_group
@@ -575,7 +570,7 @@ class OptionsFlow(config_entries.OptionsFlow):
                     title="", data=dict(self.config_entry.options)
                 )
         return self.async_show_form(
-            step_id="edit_group_details",
+            step_id="group_details",
             data_schema=vol.Schema(
                 {
                     vol.Required("name", default=suggested_name): str,
@@ -587,7 +582,7 @@ class OptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_edit_circuit_details(self, user_input=None):
+    async def async_step_circuit_details(self, user_input=None):
         if self.config_entry.options.get("pending_group_operation"):
             return self.async_abort(reason="group_operation_pending")
         errors = {}
@@ -618,7 +613,7 @@ class OptionsFlow(config_entries.OptionsFlow):
         lights, relays = _catalog_choices(catalog, other)
         if user_input is not None:
             try:
-                name = _require_name(user_input.get("name"))
+                name = _edited_name(user_input.get("name"))
                 light = _split_light(user_input["light"])
                 relay = _split_relay(user_input["relay"])
                 if (
@@ -689,7 +684,7 @@ class OptionsFlow(config_entries.OptionsFlow):
                         TypeError,
                     ):
                         return self.async_show_form(
-                            step_id="edit_circuit_details",
+                            step_id="circuit_details",
                             data_schema=vol.Schema(
                                 {
                                     vol.Required(
@@ -733,7 +728,7 @@ class OptionsFlow(config_entries.OptionsFlow):
             }
         )
         return self.async_show_form(
-            step_id="edit_circuit_details", data_schema=schema, errors=errors
+            step_id="circuit_details", data_schema=schema, errors=errors
         )
 
     async def async_step_add_circuit(self, user_input=None):

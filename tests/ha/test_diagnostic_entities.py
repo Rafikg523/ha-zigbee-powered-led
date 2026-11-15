@@ -222,7 +222,7 @@ async def test_edit_group_renames_z2m_and_preserves_group_id(setup, monkeypatch)
     flow.hass = hass
     flow.handler = entry.entry_id
     await flow.async_step_edit_group({"group": "group_a"})
-    result = await flow.async_step_edit_group_details(
+    result = await flow.async_step_group_details(
         {"name": "Salon", "members": ["light_a", "light_b"]}
     )
     assert result["type"] == "create_entry"

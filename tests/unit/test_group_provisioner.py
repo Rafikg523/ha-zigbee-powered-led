@@ -106,6 +106,35 @@ def test_unpowered_extra_member_is_left_in_place():
     assert action is None
 
 
+def test_circuit_taken_out_of_the_group_leaves_it_once_powered():
+    lights = dict(LIGHTS, light_c=LightEndpoint("0x0000000000000004", 1, "room/led3"))
+    catalog = (
+        CatalogGroup(
+            2,
+            "Salon_orchestrator",
+            frozenset(
+                {
+                    ("0x0000000000000002", 1),
+                    ("0x0000000000000003", 1),
+                    ("0x0000000000000004", 1),
+                }
+            ),
+        ),
+    )
+    ready = frozenset({"Salon_orchestrator"})
+    assert next_group_action(groups(), lights, catalog, frozenset(), ready) is None
+    removed = next_group_action(
+        groups(), lights, catalog, frozenset({"light_c"}), ready
+    )
+    assert removed.path == "group/members/remove"
+    assert removed.payload == {
+        "group": "Salon_orchestrator",
+        "device": "room/led3",
+        "endpoint": 1,
+        "skip_disable_reporting": True,
+    }
+
+
 def test_stored_binding_updates_only_the_orchestrator_id():
     original = [
         {"id": "group_a", "z2m_id": 1, "name": "Salon", "members": ["light_a"]},

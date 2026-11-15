@@ -206,7 +206,6 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
         "create_group": "Create group",
         "edit_circuit": "Edit circuit",
         "edit_group": "Edit group",
-        "control": "Control mode",
     }
     form = await flow.async_step_add_circuit()
     assert {str(key) for key in form["data_schema"].schema} == {
@@ -240,7 +239,7 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
     assert result["type"] == "create_entry"
     assert entry.data["policies"] == _one_pair()["policies"]
     assert entry.data["lights"][1]["id"] == "light_2"
-    assert entry.data["lights"][1]["name"] == "Salon"
+    assert entry.data["lights"][1]["name"] == "Salon_orchestrator"
     assert entry.data["lights"][0]["name"] == "Kuchnia"
     assert entry.data["groups"] == []
     assert scheduled == [entry.entry_id]
@@ -254,14 +253,12 @@ def test_menu_labels_follow_the_ha_language():
         "create_group": "Utwórz grupę",
         "edit_circuit": "Edytuj obwód",
         "edit_group": "Edytuj grupę",
-        "control": "Tryb sterowania",
     }
     assert list(menu_options_for("de")) == [
         "add_circuit",
         "create_group",
         "edit_circuit",
         "edit_group",
-        "control",
     ]
 
 
@@ -408,7 +405,7 @@ async def test_edit_circuit_preserves_id_and_validates_mapping(
     flow.hass = hass
     flow.handler = entry.entry_id
     await flow.async_step_edit_circuit({"circuit": "light_1"})
-    result = await flow.async_step_edit_circuit_details(
+    result = await flow.async_step_circuit_details(
         {
             "name": "Salon",
             "light": "0x0000000000000003|1",
@@ -436,7 +433,7 @@ async def test_renaming_circuit_preserves_configured_temperature_range(
     flow.hass = hass
     flow.handler = entry.entry_id
     await flow.async_step_edit_circuit({"circuit": "light_1"})
-    await flow.async_step_edit_circuit_details(
+    await flow.async_step_circuit_details(
         {
             "name": "Salon",
             "light": "0x0000000000000002|1",

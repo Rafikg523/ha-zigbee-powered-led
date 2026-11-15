@@ -118,7 +118,7 @@ async def test_add_third_circuit_with_single_gang_relay(hass, monkeypatch):
     assert len(entry.data["lights"]) == 3
     assert len(entry.data["relay_channels"]) == 3
     assert entry.data["lights"][2]["id"] == "light_3"
-    assert entry.data["lights"][2]["name"] == "Light 3"
+    assert entry.data["lights"][2]["name"] == "Light 3_orchestrator"
     assert entry.data["relay_channels"][2]["state_key"] == "state"
 
 

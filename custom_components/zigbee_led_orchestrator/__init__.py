@@ -79,12 +79,12 @@ async def _async_remove_group(hass, entry, group, device) -> None:
 async def _async_remove_group_locked(hass, entry, group, device) -> None:
     """Remove an owned Zigbee group after its catalog confirms deletion."""
     import asyncio
-    import copy
 
     from homeassistant.exceptions import HomeAssistantError
     from homeassistant.helpers import entity_registry as er
 
     from .group_provisioner import z2m_group_name
+    from .management import without_group
     from .models import ControlMode
 
     runtime = entry.runtime_data
@@ -98,8 +98,6 @@ async def _async_remove_group_locked(hass, entry, group, device) -> None:
     }
     if pending and any(pending.get(key) != value for key, value in operation.items()):
         raise HomeAssistantError("Another group operation needs to be completed first")
-    if any(group["id"] in room["groups"] for room in entry.data.get("rooms", [])):
-        raise HomeAssistantError("Remove the group from its room first")
     if (
         not getattr(adapter.topology, "groups_seen", False)
         or runtime._observations.bridge_online is not True
@@ -201,8 +199,7 @@ async def _async_remove_group_locked(hass, entry, group, device) -> None:
         unsubscribe()
     if not removed():
         raise HomeAssistantError("Group removal is not confirmed by a current catalog")
-    data = copy.deepcopy(dict(entry.data))
-    data["groups"] = [item for item in data["groups"] if item["id"] != group["id"]]
+    data = without_group(entry.data, group["id"])
     options = dict(entry.options)
     options.pop("pending_group_operation", None)
     options["retired_ids"] = [*options.get("retired_ids", []), group["id"]]
@@ -234,7 +231,6 @@ async def async_setup_entry(hass, entry) -> bool:
     runtime = Runtime(
         config,
         MqttAdapter(hass, config),
-        user_inactive=entry.options.get("active") is False,
         management_pending=(entry.options.get("pending_group_operation") or {}).get(
             "id"
         ),
@@ -282,6 +278,7 @@ async def async_setup_entry(hass, entry) -> bool:
         runtime.set_notice_listener(publish_notice)
         await runtime.start()
         entry.runtime_data = runtime
+        _remove_stale_devices(hass, entry, config)
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         if not hass.services.has_service(DOMAIN, "pause"):
             async_register_services(hass)
@@ -314,3 +311,26 @@ async def async_unload_entry(hass, entry) -> bool:
     if hass.data.get(DOMAIN) == entry.entry_id:
         hass.data.pop(DOMAIN, None)
     return True
+
+
+def _configured_ids(entry, config) -> set[str]:
+    from .entity import device_identifier
+
+    ids = {light.id for light in config.lights}
+    ids.update(group.id for group in config.groups)
+    return {device_identifier(entry.entry_id, item)[1] for item in ids}
+
+
+def _remove_stale_devices(hass, entry, config) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    registry = dr.async_get(hass)
+    expected = _configured_ids(entry, config)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if not any(
+            domain == DOMAIN and value in expected
+            for domain, value in device.identifiers
+        ):
+            registry.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id
+            )

@@ -100,7 +100,7 @@ async def test_remap_group_member_keeps_entity_identity_and_exact_membership(
     flow.hass = hass
     flow.handler = entry.entry_id
     await flow.async_step_edit_circuit({"circuit": "light_a"})
-    result = await flow.async_step_edit_circuit_details(
+    result = await flow.async_step_circuit_details(
         {
             "name": "Replacement",
             "light": "0x0000000000000004|1",

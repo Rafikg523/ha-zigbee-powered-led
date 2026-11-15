@@ -32,16 +32,8 @@
         "menu_options": {
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
-          "control": "Tryb sterowania",
           "edit_circuit": "Edytuj obwód",
           "edit_group": "Edytuj grupę"
-        }
-      },
-      "control": {
-        "title": "Tryb sterowania",
-        "description": "Sterowanie włącza się, gdy mostek Zigbee2MQTT jest online i zapisane obwody są w katalogu. Brakujący obwód dostaje powiadomienie w Home Assistant, a pozostałe działają dalej. Wyłączenie tutaj zostawia sterowanie wyłączone, dopóki nie włączysz go ponownie. Stare ON nie jest odtwarzane.",
-        "data": {
-          "active": "Włącz aktywne sterowanie"
         }
       },
       "add_circuit": {
@@ -63,11 +55,12 @@
       },
       "edit_circuit": {
         "title": "Wybierz obwód",
+        "description": "Wybierz obwód do zmiany.",
         "data": {
           "circuit": "Obwód"
         }
       },
-      "edit_circuit_details": {
+      "circuit_details": {
         "title": "Edytuj obwód",
         "data": {
           "name": "Nazwa",
@@ -78,11 +71,12 @@
       },
       "edit_group": {
         "title": "Wybierz grupę",
+        "description": "Wybierz grupę do zmiany.",
         "data": {
           "group": "Grupa"
         }
       },
-      "edit_group_details": {
+      "group_details": {
         "title": "Edytuj grupę",
         "description": "Zmiana składu wymaga zasilonych kontrolerów. W razie przerwania sprawdź stan grupy przed ponowieniem.",
         "data": {
@@ -99,6 +93,14 @@
       }
     },
     "error": {
+      "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
+      "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
+      "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
+      "need_two_members": "Wybierz co najmniej jeden obwód do grupy.",
+      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "circuit_in_group": "Ten obwód należy do grupy. Usuń go z grupy, zanim zmienisz kontroler albo kanał.",
+      "group_rename_failed": "Zigbee2MQTT nie potwierdził zmiany nazwy. Sprawdź, czy mostek jest online, i spróbuj ponownie.",
       "control_unavailable": "Nie można włączyć sterowania. Sprawdź mostek, zgodność mapowania i diagnostykę rozszerzenia raportów. Po zmianie topologii użyj resync.",
       "topology_stale": "Katalog Zigbee2MQTT zmienił się dla tych obwodów. Użyj resync, a potem włącz sterowanie ponownie. Poprzednie ON nie jest odtwarzane.",
       "mapping_mismatch": "Zapisane mapowanie nie zgadza się z katalogiem Zigbee2MQTT. Sprawdź urządzenia, endpointy i kanały przekaźników.",
@@ -106,12 +108,6 @@
       "bridge_unavailable": "Połączenie MQTT albo mostek Zigbee2MQTT jest offline. Sterowanie pozostaje wyłączone, dopóki mostek nie będzie online.",
       "report_extension_unavailable": "Rozszerzenie raportów Zigbee2MQTT nie jest gotowe. Sprawdź report_extension_ready w diagnostyce i użyj resync po załadowaniu rozszerzenia.",
       "devices_missing": "Żaden skonfigurowany obwód nie jest w katalogu Zigbee2MQTT. Sterowanie zostaje wyłączone, dopóki któryś nie wróci.",
-      "invalid_mapping": "Konfiguracja lub przypisanie urządzeń jest nieprawidłowe.",
-      "invalid_name": "Nazwa wirtualnej encji nie może być pusta ani mieć spacji na brzegach.",
-      "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
-      "need_two_members": "Wybierz co najmniej jeden obwód do grupy.",
-      "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
-      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
       "group_operation_failed": "Zmiana nie została potwierdzona. Sprawdź zasilanie kontrolerów i stan Z2M. Jeśli operacja oczekuje, otwórz Konfiguruj → Dokończ operację grupy.",
       "confirmation_required": "Potwierdź sprawdzenie grupy i zakończenie wcześniejszych żądań."
     },
@@ -120,8 +116,8 @@
       "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane.",
       "need_two_circuits": "Dodaj co najmniej jeden obwód, który nie jest jeszcze w grupie.",
       "no_circuits": "Najpierw dodaj obwód.",
-      "circuit_missing": "Obwód został usunięty.",
       "no_groups": "Najpierw utwórz grupę.",
+      "circuit_missing": "Obwód został usunięty.",
       "group_missing": "Grupa została usunięta.",
       "group_operation_pending": "Najpierw dokończ rozpoczętą operację grupy.",
       "configuration_changed": "Konfiguracja zmieniła się. Otwórz edycję ponownie.",
@@ -172,6 +168,35 @@
           "description": "Ogranicz do jednego światła."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "phase": {
+        "name": "Faza"
+      },
+      "effective_state": {
+        "name": "Stan rzeczywisty"
+      }
+    },
+    "binary_sensor": {
+      "confirmed": {
+        "name": "Potwierdzone"
+      }
+    }
+  },
+  "exceptions": {
+    "circuit_in_group": {
+      "message": "Ten obwód należy do grupy {group}. Najpierw usuń go z grupy albo usuń grupę."
+    },
+    "runtime_not_running": {
+      "message": "Integracja nie jest uruchomiona. Uruchom ponownie Home Assistant i spróbuj jeszcze raz."
+    },
+    "group_remove_failed": {
+      "message": "Zigbee2MQTT nie usunął grupy, więc zostaje: {error}. Włącz zasilanie obwodów tej grupy, aby każdy kontroler mógł odpowiedzieć, i spróbuj ponownie."
+    },
+    "group_remove_unknown": {
+      "message": "Zigbee2MQTT nie odpowiedział na czas. Grupa zostaje tutaj i nie jest ruszana. Spróbuj usunąć ją ponownie za chwilę."
     }
   }
 }

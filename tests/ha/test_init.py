@@ -47,7 +47,7 @@ async def test_setup_is_observe_only_and_unload_cleans_runtime(
     assert mocked_adapter[0].topology_callback is None
 
 
-async def test_setup_preserves_explicit_manual_control_disable(
+async def test_setup_ignores_obsolete_control_mode_option(
     hass, mocked_adapter, monkeypatch
 ):
     from custom_components.zigbee_led_orchestrator import (
@@ -66,7 +66,7 @@ async def test_setup_preserves_explicit_manual_control_disable(
     assert await async_setup_entry(hass, entry)
     entry.runtime_data._maybe_arm()
     assert not mocked_adapter[0].active
-    assert entry.runtime_data._user_inactive
+    assert not entry.runtime_data._user_inactive
     assert await async_unload_entry(hass, entry)
 
 
