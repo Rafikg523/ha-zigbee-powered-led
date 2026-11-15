@@ -27,7 +27,14 @@ from .topology import Topology
 
 _LOGGER = logging.getLogger(__name__)
 _BRIDGE_PATHS = frozenset(
-    {"group/add", "group/options", "group/members/add", "group/members/remove"}
+    {
+        "group/add",
+        "group/options",
+        "group/members/add",
+        "group/members/remove",
+        "group/rename",
+        "group/remove",
+    }
 )
 
 

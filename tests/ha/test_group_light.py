@@ -149,7 +149,8 @@ async def test_platform_creates_group_entity_next_to_lights():
     runtime.config = validate_config(valid_config())
     entities = []
     entry = SimpleNamespace(entry_id="entry-123", runtime_data=runtime)
-    await async_setup_entry(None, entry, entities.extend)
+    hass = SimpleNamespace(config=SimpleNamespace(language="pl"))
+    await async_setup_entry(hass, entry, entities.extend)
     assert {entity.unique_id for entity in entities} == {
         "entry-123_light_a",
         "entry-123_light_b",
@@ -158,7 +159,12 @@ async def test_platform_creates_group_entity_next_to_lights():
     group_entity = next(
         entity for entity in entities if entity.unique_id.endswith("group_a")
     )
-    assert group_entity.name == "group_a_orchestrator"
+    assert group_entity.name is None
+    assert group_entity.device_info["name"] == "group_a_orchestrator"
+    assert group_entity.device_info["model"] == "Grupa obwodów"
+    assert group_entity.device_info["identifiers"] == {
+        ("zigbee_led_orchestrator", "entry-123_group_a")
+    }
 
 
 @pytest.fixture

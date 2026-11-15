@@ -28,10 +28,12 @@
     "step": {
       "choose": {
         "title": "Konfiguracja",
-        "description": "Dodaj obwód, utwórz grupę z już dodanych obwodów albo zmień tryb sterowania. Zapis obwodu lub grupy przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Dodaj lub edytuj obwód albo grupę, albo zmień tryb sterowania. Każdy obwód i każda grupa jest urządzeniem na stronie integracji: otwórz je, aby zobaczyć diagnostykę, ołówkiem zmień nazwę lub obszar, a usuń z menu urządzenia. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "menu_options": {
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
+          "edit_circuit": "Edytuj obwód",
+          "edit_group": "Edytuj grupę",
           "control": "Tryb sterowania"
         }
       },
@@ -58,6 +60,37 @@
           "name": "Nazwa grupy",
           "members": "Obwody w tej grupie"
         }
+      },
+      "edit_circuit": {
+        "title": "Edytuj obwód",
+        "description": "Wybierz obwód do zmiany.",
+        "data": {
+          "circuit": "Obwód"
+        }
+      },
+      "circuit_details": {
+        "title": "Edytuj obwód {circuit}",
+        "description": "Zmień nazwę, kontroler albo kanał zasilania. Światło i jego diagnostyka zachowują identyfikatory encji i historię. Obwód w grupie zachowuje kontroler i kanał; najpierw usuń go z grupy. Zapis przeładowuje integrację.",
+        "data": {
+          "name": "Nazwa wirtualnej encji",
+          "light": "Kontroler LED i endpoint",
+          "relay": "Kanał zasilania"
+        }
+      },
+      "edit_group": {
+        "title": "Edytuj grupę",
+        "description": "Wybierz grupę do zmiany.",
+        "data": {
+          "group": "Grupa"
+        }
+      },
+      "group_details": {
+        "title": "Edytuj grupę {group}",
+        "description": "Zmień nazwę albo obwody w grupie. Nowa nazwa zmienia nazwę grupy w Zigbee2MQTT, która zachowuje swój identyfikator Zigbee. Usunięty obwód wychodzi z grupy w Zigbee2MQTT, a dodany do niej wchodzi, gdy jego kontroler będzie zasilony; do tego czasu grupa jest niedostępna, a jej obwody działają osobno. Integracja nie włącza w tym celu zasilania. Zapis przeładowuje integrację.",
+        "data": {
+          "name": "Nazwa grupy",
+          "members": "Obwody w tej grupie"
+        }
       }
     },
     "error": {
@@ -73,12 +106,16 @@
       "invalid_group_name": "Nazwa grupy jest pusta, za długa albo zawiera znaki, których Zigbee2MQTT nie przyjmie.",
       "need_two_members": "Wybierz co najmniej dwa obwody do grupy.",
       "already_mapped": "Ta nazwa, kontroler albo kanał przekaźnika jest już użyty.",
-      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny."
+      "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
+      "circuit_in_group": "Ten obwód należy do grupy. Usuń go z grupy, zanim zmienisz kontroler albo kanał.",
+      "group_rename_failed": "Zigbee2MQTT nie potwierdził zmiany nazwy. Sprawdź, czy mostek jest online, i spróbuj ponownie."
     },
     "abort": {
       "catalog_unavailable": "Katalog urządzeń i grup Zigbee2MQTT jest niedostępny.",
       "no_free_circuit": "Wszystkie wykryte kontrolery i kanały przekaźnika są już przypisane.",
-      "need_two_circuits": "Dodaj co najmniej dwa obwody, które nie są jeszcze w grupie."
+      "need_two_circuits": "Dodaj co najmniej dwa obwody, które nie są jeszcze w grupie.",
+      "no_circuits": "Nie ma jeszcze żadnego obwodu.",
+      "no_groups": "Nie ma jeszcze żadnej grupy."
     }
   },
   "services": {
@@ -125,6 +162,35 @@
           "description": "Ogranicz do jednego światła."
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "phase": {
+        "name": "Faza"
+      },
+      "effective_state": {
+        "name": "Stan rzeczywisty"
+      }
+    },
+    "binary_sensor": {
+      "confirmed": {
+        "name": "Potwierdzone"
+      }
+    }
+  },
+  "exceptions": {
+    "circuit_in_group": {
+      "message": "Ten obwód należy do grupy {group}. Najpierw usuń go z grupy albo usuń grupę."
+    },
+    "runtime_not_running": {
+      "message": "Integracja nie jest uruchomiona. Uruchom ponownie Home Assistant i spróbuj jeszcze raz."
+    },
+    "group_remove_failed": {
+      "message": "Zigbee2MQTT nie usunął grupy, więc zostaje: {error}. Włącz zasilanie obwodów tej grupy, aby każdy kontroler mógł odpowiedzieć, i spróbuj ponownie."
+    },
+    "group_remove_unknown": {
+      "message": "Zigbee2MQTT nie odpowiedział na czas. Grupa zostaje tutaj i nie jest ruszana. Spróbuj usunąć ją ponownie za chwilę."
     }
   }
 }

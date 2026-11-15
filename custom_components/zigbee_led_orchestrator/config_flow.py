@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+from dataclasses import replace
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -16,6 +17,7 @@ from .configuration import circuit_label, validate_config
 from .const import DOMAIN
 from .group_provisioner import normalize_group_name, z2m_group_name
 from .light_capabilities import LightCapabilities
+from .management import find, group_of
 from .models import ControlMode
 from .topology import Topology, validate_topology
 
@@ -25,16 +27,20 @@ _POLICY_DEFAULTS = (
     ("boot_grace_ms", 2500),
     ("readiness_timeout_ms", 8000),
 )
-_MENU_STEPS = ("add_circuit", "create_group", "control")
+_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group", "control")
 _MENU_LABELS = {
     "en": {
         "add_circuit": "Add circuit",
         "create_group": "Create group",
+        "edit_circuit": "Edit circuit",
+        "edit_group": "Edit group",
         "control": "Control mode",
     },
     "pl": {
         "add_circuit": "Dodaj obwód",
         "create_group": "Utwórz grupę",
+        "edit_circuit": "Edytuj obwód",
+        "edit_group": "Edytuj grupę",
         "control": "Tryb sterowania",
     },
 }
@@ -271,10 +277,14 @@ def _known_group_names(data: dict) -> set[str]:
         if not isinstance(group, dict):
             continue
         try:
-            names.add(z2m_group_name(normalize_group_name(group.get("name", ""))))
+            names.add(z2m_group_name(_stored_group_name(group)))
         except TypeError, ValueError:
             continue
     return names
+
+
+def _stored_group_name(group: dict) -> str:
+    return normalize_group_name(group.get("name", group.get("id")))
 
 
 class _FormError(Exception):
@@ -524,3 +534,207 @@ class OptionsFlow(config_entries.OptionsFlow):
             ),
             errors=errors,
         )
+
+    def _save(self, data: dict):
+        self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+        self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        return self.async_create_entry(title="", data=dict(self.config_entry.options))
+
+    async def async_step_edit_circuit(self, user_input=None):
+        options = {
+            str(light["id"]): _stored_label(light)
+            for light in self.config_entry.data.get("lights", [])
+        }
+        if not options:
+            return self.async_abort(reason="no_circuits")
+        if user_input is not None and user_input.get("circuit") in options:
+            self._item_id = user_input["circuit"]
+            return await self.async_step_circuit_details()
+        return self.async_show_form(
+            step_id="edit_circuit",
+            data_schema=vol.Schema({vol.Required("circuit"): vol.In(options)}),
+        )
+
+    async def async_step_circuit_details(self, user_input=None):
+        errors = {}
+        if not hasattr(self, "_catalog"):
+            try:
+                self._catalog = await discover_topology(
+                    self.hass, self.config_entry.data["base_topic"]
+                )
+            except TimeoutError, ValueError, TypeError, KeyError:
+                return self.async_abort(reason="catalog_unavailable")
+        current = copy.deepcopy(dict(self.config_entry.data))
+        light = find(current, "lights", self._item_id)
+        if light is None:
+            return self.async_abort(reason="no_circuits")
+        channel = find(current, "relay_channels", light["power_channel"])
+        rest = copy.deepcopy(current)
+        rest["lights"] = [i for i in rest["lights"] if i["id"] != light["id"]]
+        rest["relay_channels"] = [
+            i for i in rest["relay_channels"] if i["id"] != channel["id"]
+        ]
+        light_options, relay_options = _catalog_choices(self._catalog, rest)
+        light_token = f"{light['device_ieee']}|{light['endpoint']}"
+        relay_token = (
+            f"{channel['device_ieee']}|{channel['endpoint']}|{channel['state_key']}"
+        )
+        light_options.setdefault(light_token, light_token)
+        relay_options.setdefault(relay_token, relay_token)
+        if user_input is not None:
+            try:
+                name = _require_name(user_input.get("name"))
+            except ValueError:
+                errors["base"] = "invalid_name"
+            else:
+                errors.update(
+                    self._apply_circuit(
+                        current, rest, light, channel, name, user_input, light_token
+                    )
+                )
+                if not errors:
+                    return self._save(current)
+        return self.async_show_form(
+            step_id="circuit_details",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=_stored_label(light)): str,
+                    vol.Required("light", default=light_token): vol.In(light_options),
+                    vol.Required("relay", default=relay_token): vol.In(relay_options),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"circuit": _stored_label(light)},
+        )
+
+    def _apply_circuit(
+        self, current, rest, light, channel, name, user_input, light_token
+    ) -> dict:
+        """Update ``current`` in place, keeping the ids and therefore the entities."""
+        try:
+            new_light = _split_light(user_input["light"])
+            new_relay = _split_relay(user_input["relay"])
+            if _pair_taken(rest, name, new_light, new_relay):
+                return {"base": "already_mapped"}
+            moved = new_light != (
+                light["device_ieee"].lower(),
+                int(light["endpoint"]),
+            ) or new_relay != (
+                channel["device_ieee"].lower(),
+                int(channel["endpoint"]),
+                channel["state_key"],
+            )
+            if moved and group_of(current, light["id"]) is not None:
+                return {"base": "circuit_in_group"}
+            light["name"] = name
+            if user_input["light"] != light_token:
+                minimum, maximum = _kelvin_range(self._catalog, *new_light)
+                light["min_kelvin"], light["max_kelvin"] = minimum, maximum
+            light["device_ieee"], light["endpoint"] = new_light
+            channel["device_ieee"], channel["endpoint"], channel["state_key"] = (
+                new_relay
+            )
+            config = validate_config(current)
+            if moved:
+                validate_topology(
+                    replace(
+                        config,
+                        lights=tuple(i for i in config.lights if i.id == light["id"]),
+                        relay_channels=tuple(
+                            i for i in config.relay_channels if i.id == channel["id"]
+                        ),
+                        groups=(),
+                        rooms=(),
+                    ),
+                    self._catalog,
+                    require_groups=False,
+                )
+        except TypeError, ValueError, KeyError, IndexError:
+            return {"base": "invalid_mapping"}
+        return {}
+
+    async def async_step_edit_group(self, user_input=None):
+        options = {
+            str(group["id"]): z2m_group_name(_stored_group_name(group))
+            for group in self.config_entry.data.get("groups", [])
+        }
+        if not options:
+            return self.async_abort(reason="no_groups")
+        if user_input is not None and user_input.get("group") in options:
+            self._item_id = user_input["group"]
+            return await self.async_step_group_details()
+        return self.async_show_form(
+            step_id="edit_group",
+            data_schema=vol.Schema({vol.Required("group"): vol.In(options)}),
+        )
+
+    async def async_step_group_details(self, user_input=None):
+        errors = {}
+        current = copy.deepcopy(dict(self.config_entry.data))
+        group = find(current, "groups", self._item_id)
+        if group is None:
+            return self.async_abort(reason="no_groups")
+        others = copy.deepcopy(current)
+        others["groups"] = [g for g in others["groups"] if g["id"] != group["id"]]
+        free = _free_lights(others)
+        options = {
+            str(light["id"]): circuit_label(str(light["id"]), light.get("name"))
+            for light in free
+        }
+        if user_input is not None:
+            try:
+                name = _group_name(user_input.get("name"))
+                if z2m_group_name(name) in _known_group_names(others):
+                    raise _FormError("already_mapped")
+                chosen = user_input.get("members")
+                if not isinstance(chosen, list) or not set(chosen) <= set(options):
+                    raise _FormError("invalid_mapping")
+                members = [str(i["id"]) for i in free if str(i["id"]) in set(chosen)]
+                if len(members) < 2:
+                    raise _FormError("need_two_members")
+                previous = _stored_group_name(group)
+                group["name"], group["members"] = name, members
+                validate_config(current)
+                if z2m_group_name(name) != z2m_group_name(previous):
+                    await self._rename_group(group["id"], previous, name)
+            except _FormError as exc:
+                errors["base"] = exc.reason
+            except TypeError, ValueError, KeyError, IndexError:
+                errors["base"] = "invalid_mapping"
+            else:
+                return self._save(current)
+        return self.async_show_form(
+            step_id="group_details",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=_stored_group_name(group)): str,
+                    vol.Required(
+                        "members", default=list(group["members"])
+                    ): cv.multi_select(options),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "group": z2m_group_name(_stored_group_name(group))
+            },
+        )
+
+    async def _rename_group(self, group_id: str, previous: str, name: str) -> None:
+        """Rename the owned Zigbee2MQTT group so it keeps its id and members."""
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        if runtime is None:
+            raise _FormError("runtime_not_running")
+        try:
+            if runtime.catalog_group(name) is not None:
+                raise _FormError("already_mapped")
+            if runtime.catalog_group(previous) is None:
+                return
+            await runtime.change_group(
+                group_id,
+                "group/rename",
+                {"from": z2m_group_name(previous), "to": z2m_group_name(name)},
+            )
+        except _FormError:
+            raise
+        except (RuntimeError, TimeoutError, ValueError) as exc:
+            raise _FormError("group_rename_failed") from exc
