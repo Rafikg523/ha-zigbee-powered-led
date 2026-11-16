@@ -170,7 +170,7 @@ async def test_t11_bridge_restart_clears_permission(rig):  # noqa: F811
         engine.submit(("led",), IntentPatch(on=True), source="ui")
 
 
-async def test_off_after_correlation_window_is_external(rig):  # noqa: F811
+async def test_unresolved_own_off_keeps_correlation_after_timeout(rig):  # noqa: F811
     clock, _, observations, engine = rig
     await clock.advance(0.01)
     relay(observations, engine, clock, SwitchState.ON)
@@ -179,7 +179,9 @@ async def test_off_after_correlation_window_is_external(rig):  # noqa: F811
     engine.submit(("led",), IntentPatch(on=True), source="ui")
     await clock.advance(3.1)
     relay(observations, engine, clock, SwitchState.OFF)
-    assert not engine.snapshot("led").desired.on
+    assert engine.snapshot("led").desired.on
+    await clock.advance(0.41)
+    assert engine.snapshot("led").desired.on
 
 
 async def test_late_on_after_disconnect_is_reconciled_to_off(rig):  # noqa: F811

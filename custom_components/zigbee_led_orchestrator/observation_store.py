@@ -42,6 +42,8 @@ def _clear_led(snapshot: LightObservation) -> LightObservation:
         led_received_at=None,
         brightness=None,
         color_temp_kelvin=None,
+        attribute_times=(),
+        read_response_times=(),
     )
 
 
@@ -193,12 +195,21 @@ class ObservationStore:
         record.relay_watermark = event.received_at
         quality = event.quality
         trusted = quality == EvidenceQuality.DEVICE_REPORT and not event.retained
+        off_since = None
+        if trusted and event.state == SwitchState.OFF:
+            off_since = (
+                previous.relay_off_since
+                if record.confirmed_power == SwitchState.OFF
+                and previous.relay_off_since is not None
+                else event.received_at
+            )
         current = replace(
             previous,
             relay_state=event.state,
             relay_quality=quality,
             relay_retained=event.retained,
             relay_received_at=event.received_at,
+            relay_off_since=off_since,
         )
         if trusted and event.state == SwitchState.ON:
             current = replace(current, power_off_at=None)
@@ -255,6 +266,34 @@ class ObservationStore:
             led_received_at=event.received_at,
             brightness=event.brightness,
             color_temp_kelvin=event.color_temp_kelvin,
+            attribute_times=event.attribute_times
+            if event.attribute_times is not None
+            else tuple(
+                (key, event.received_at)
+                for key, value in (
+                    (
+                        "state",
+                        event.state if event.state != SwitchState.UNKNOWN else None,
+                    ),
+                    ("brightness", event.brightness),
+                    ("color_temp", event.color_temp_kelvin),
+                )
+                if value is not None
+            ),
+            read_response_times=event.read_response_times
+            if event.read_response_times is not None
+            else tuple(
+                (key, event.received_at)
+                for key, value in (
+                    (
+                        "state",
+                        event.state if event.state != SwitchState.UNKNOWN else None,
+                    ),
+                    ("brightness", event.brightness),
+                    ("color_temp", event.color_temp_kelvin),
+                )
+                if value is not None
+            ),
         )
         return record.snapshot != previous
 
@@ -263,6 +302,9 @@ class ObservationStore:
             return ObservationDelta(frozenset())
         self._bridge_watermark = event.received_at
         changed = self._bridge_online != event.online
+        if changed:
+            for record in self._records.values():
+                record.snapshot = replace(record.snapshot, relay_off_since=None)
         if changed and not event.online:
             self._bridge_cutoff = event.received_at
             self.invalidate_bridge()

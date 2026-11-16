@@ -42,7 +42,15 @@ Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowan
 
 Od wersji 0.1.0b5, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
 
-Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.3.5`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.3.6`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
+## Ograniczenie komend i diagnostyka (0.3.6)
+
+Zmiany jasności/CCT czekają na rozstrzygnięcie poprzedniej operacji na tym kontrolerze. Pozostaje tylko najnowszy cel; brak potwierdzenia zatrzymuje zwykłe wysyłki także po timeoutcie. Nowy wiarygodny raport może wznowić realizację celu. Identyczne OFF nie powtarza LED OFF ani nierozstrzygniętego odcięcia. Kolejność LED OFF → przekaźnik pozostaje, z dotychczasowym limitem 2 s dla etapu LED. Faktyczne odcięcie może trwać dłużej przez komendy już przyjęte przez Z2M.
+
+Usługa `zigbee_led_orchestrator.diagnose` zwraca `events` (do 1024 wpisów), `events_dropped`, `captured_at_unix` i `monotonic_time`. Bufor jest w pamięci, wspólny dla wpisu integracji i znika po restarcie. Pobierz diagnostykę od razu po próbie; przy dużym ruchu starsze zdarzenia wypadają. Dla porównania z logami czas zdarzenia w Unix to `captured_at_unix + event.time - monotonic_time`. Ślad pokazuje przyjęcie celu, publikację MQTT, raporty i timeouty, ale sam nie dowodzi chwili fizycznej emisji światła.
+
+Odbiór sprzętowy wykonuje operator po aktualizacji: osobno obwody, grupa pokoju i nadrzędne „wszystkie światła”, w obu trybach gotowości. Zapisz diagnostykę po sekwencji jasności 255 → 56 → 191 → 56, zmianie barwy podczas oczekiwania oraz pojedynczym i powtarzanym OFF. Porównaj czasy publikacji, odpowiedzi urządzeń oraz faktyczne światło. Grupy HA zachowują swoje ustawienia; ich wskaźnik może pokazywać średnią aktualizowanych członków.
 
 ## Późna gotowość i synchronizacja grup (0.3.5)
 

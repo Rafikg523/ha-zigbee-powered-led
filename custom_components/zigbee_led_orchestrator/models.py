@@ -196,6 +196,8 @@ class LedObservation:
     quality: EvidenceQuality
     brightness: int | None = None
     color_temp_kelvin: int | None = None
+    attribute_times: tuple[tuple[str, float], ...] | None = None
+    read_response_times: tuple[tuple[str, float], ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +234,9 @@ class LightObservation:
     power_started_at: float | None = None
     # Receipt time of a trusted ON→OFF report, not a physical switching timestamp.
     power_off_at: float | None = None
+    attribute_times: tuple[tuple[str, float], ...] = ()
+    read_response_times: tuple[tuple[str, float], ...] = ()
+    relay_off_since: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

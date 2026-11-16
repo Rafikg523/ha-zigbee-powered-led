@@ -152,6 +152,12 @@ async def test_t05_group_sends_one_native_set_after_barrier(ready):
     relay_payloads = [p for t, p in rig.publications() if t == RELAY_SET]
     assert {key for payload in relay_payloads for key in payload} == {
         "state_l1",
+    }
+    await rig.report_relay("ON", "OFF")
+    await rig.advance(0.15)
+    relay_payloads = [p for t, p in rig.publications() if t == RELAY_SET]
+    assert {key for payload in relay_payloads for key in payload} == {
+        "state_l1",
         "state_l2",
     }
     assert all(value == "ON" for p in relay_payloads for value in p.values())

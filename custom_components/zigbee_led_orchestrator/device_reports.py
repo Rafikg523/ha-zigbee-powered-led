@@ -29,11 +29,24 @@ class DeviceReports:
         self.broken = False
         self._relays: dict[str, SwitchState] = {}
         self._values: dict[str, dict] = {}
+        self._times: dict[str, dict[str, float]] = {}
+        self._read_times: dict[str, dict[str, float]] = {}
 
-    def invalidate_leds(self, light_ids: tuple[str, ...]) -> None:
+    def invalidate_leds(
+        self, light_ids: tuple[str, ...], fields: tuple[str, ...] | None = None
+    ) -> None:
         """A publication requires new attribute proof after its completion."""
         for light_id in light_ids:
-            self._values.pop(light_id, None)
+            if fields is None:
+                self._values.pop(light_id, None)
+                self._times.pop(light_id, None)
+                self._read_times.pop(light_id, None)
+            else:
+                for key in fields:
+                    field = "color_temp_kelvin" if key == "color_temp" else key
+                    self._values.get(light_id, {}).pop(field, None)
+                    self._times.get(light_id, {}).pop(key, None)
+                    self._read_times.get(light_id, {}).pop(key, None)
 
     def request(self) -> dict:
         return {
@@ -75,6 +88,8 @@ class DeviceReports:
             self.ready = False
             self._relays.clear()
             self._values.clear()
+            self._times.clear()
+            self._read_times.clear()
             return ()
         address = (payload.get("ieee"), payload["endpoint"])
         channels = [
@@ -120,6 +135,8 @@ class DeviceReports:
                 for light in self.config.lights:
                     if light.power_channel == channel.id:
                         self._values.pop(light.id, None)
+                        self._times.pop(light.id, None)
+                        self._read_times.pop(light.id, None)
             self._relays[channel.id] = state
             result.append(
                 RelayObservation(
@@ -137,6 +154,21 @@ class DeviceReports:
                 continue
             values = self._values.setdefault(light.id, {})
             values.update(attributes)
+            times = self._times.setdefault(light.id, {})
+            times.update(
+                {
+                    "color_temp" if key == "color_temp_kelvin" else key: now
+                    for key in attributes
+                }
+            )
+            read_times = self._read_times.setdefault(light.id, {})
+            if payload["type"] == "readResponse":
+                read_times.update(
+                    {
+                        "color_temp" if key == "color_temp_kelvin" else key: now
+                        for key in attributes
+                    }
+                )
             result.append(
                 LedObservation(
                     light.id,
@@ -146,6 +178,8 @@ class DeviceReports:
                     EvidenceQuality.DEVICE_REPORT,
                     values.get("brightness"),
                     values.get("color_temp_kelvin"),
+                    tuple(times.items()),
+                    tuple(read_times.items()),
                 )
             )
         return tuple(result)

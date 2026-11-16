@@ -201,7 +201,18 @@ async def test_runtime_group_on_powers_each_member_and_never_sends_group_early(
     instance.set_mode(ControlMode.ACTIVE)
     instance.submit_group("group_a", IntentPatch(on=True), source="ui")
     await asyncio.sleep(0.3)
-    assert sorted(payload.popitem() for _, payload, _ in adapter.sent) == [
+    assert [payload for _, payload, _ in adapter.sent] == [{"state_l1": "ON"}]
+    adapter.observation(
+        RelayObservation(
+            "relay_a",
+            SwitchState.ON,
+            instance._clock.now(),
+            False,
+            EvidenceQuality.DEVICE_REPORT,
+        )
+    )
+    await asyncio.sleep(0.15)
+    assert sorted(next(iter(payload.items())) for _, payload, _ in adapter.sent) == [
         ("state_l1", "ON"),
         ("state_l2", "ON"),
     ]

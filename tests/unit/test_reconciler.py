@@ -304,7 +304,22 @@ async def test_t04_slider_after_start_sends_only_latest_setting(rig):
     await clock.advance(0.12)
     assert [p.payload for p in transport.sent] == [
         {"state_l1": "ON"},
-        {"state": "ON", "brightness": 20, "transition": 0},
+        {"brightness": 20, "transition": 0},
+    ]
+
+
+@pytest.mark.parametrize("rig", ["slow"], indirect=True)
+async def test_slider_does_not_discard_unsent_verification_of_actual_operation(rig):
+    from tests.unit.test_delivery_bounds import powered
+
+    clock, transport, _observations, engine = await powered(rig)
+    transport.sent.clear()
+    engine.submit(("led",), IntentPatch(brightness=200), source="ui")
+    await clock.advance(0.28)
+    engine.submit(("led",), IntentPatch(brightness=56), source="ui")
+    await clock.advance(1)
+    assert [p.payload for p in transport.sent if p.topic.endswith("/get")] == [
+        {"brightness": ""}
     ]
 
 
@@ -758,6 +773,10 @@ async def test_corrective_setting_is_not_skipped_after_unconfirmed_publish(rig):
     count = len(transport.sent)
     engine.submit(("led",), IntentPatch(brightness=100), source="ui")
     await clock.advance(0.2)
+    assert len(transport.sent) == count
+    # MQTT acceptance of 200 does not permit the correction to overtake it.
+    led(observations, engine, clock, brightness=200)
+    await clock.advance(0.2)
     assert len(transport.sent) == count + 1
     assert transport.sent[-1].payload["brightness"] == 100
     assert not engine.snapshot("led").confirmed
@@ -782,6 +801,7 @@ async def test_cold_start_reads_unknown_relay_before_powering(rig):
     led(observations, engine, clock)
     await clock.advance(0.13)
     assert any(x.topic == "example/led/set" for x in transport.sent)
+    await clock.advance(0.12)
     assert transport.sent[-1].payload == {"state": "", "brightness": ""}
     led(observations, engine, clock, brightness=120)
     await clock.advance(0.01)

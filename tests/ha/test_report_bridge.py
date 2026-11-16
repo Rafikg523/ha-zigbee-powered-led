@@ -141,7 +141,13 @@ async def test_publish_completion_discards_cached_and_inflight_parameter_proof(
         "zigbee2mqtt/room/led/set", {"state": "ON", "color_temp": 333}
     )
     await raw(5, led, "lightingColorCtrl", {"colorTemperature": 333})
-    assert observations[-1].brightness is None
+    assert (
+        observations[-1].brightness == 179
+    )  # Unchanged field retains its old timestamp.
+    assert (
+        dict(observations[-1].attribute_times)["brightness"]
+        < dict(observations[-1].attribute_times)["color_temp"]
+    )
     assert observations[-1].state.value == "UNKNOWN"
 
 

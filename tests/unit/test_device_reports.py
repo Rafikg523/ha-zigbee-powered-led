@@ -76,6 +76,7 @@ def test_partial_led_reports_and_power_epoch_reset(reports):
     second = reports.ingest(report(reports, 3, **led), retained=False, now=3)
     assert second[0].state == SwitchState.ON
     assert second[0].brightness == 100
+    assert dict(second[0].attribute_times) == {"brightness": 2, "state": 3}
     reports.ingest(report(reports, 4, data={"onOff": 0}), retained=False, now=4)
     assert not reports.ingest(report(reports, 5, **led), retained=False, now=5)
     reports.ingest(report(reports, 6), retained=False, now=6)

@@ -18,6 +18,22 @@ from tests.helpers.clock import FakeClock
 from tests.helpers.transport import FakeTransport
 
 
+def test_delivery_trace_is_bounded_and_exports_independent_values():
+    from custom_components.zigbee_led_orchestrator.metrics import Metrics
+
+    metrics = Metrics()
+    for index in range(1100):
+        metrics.trace(
+            {"event": "intent", "time": index, "values": {"brightness": index}}
+        )
+    data = metrics.snapshot()
+    assert len(data["events"]) == 1024
+    assert data["events_dropped"] == 76
+    assert data["events"][0]["time"] == 76
+    data["events"][0]["values"]["brightness"] = -1
+    assert metrics.snapshot()["events"][0]["values"]["brightness"] == 76
+
+
 def test_buffer_is_bounded_and_percentiles_are_tagged_by_evidence():
     from custom_components.zigbee_led_orchestrator.metrics import Metrics
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import count
 from typing import Protocol
 
@@ -60,6 +60,8 @@ class Circuit:
     relay_resource: str
     led_resource: str
     relay_state_key: str
+    relay_device: str | None = None
+    led_device: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +91,16 @@ class InFlightCommand:
     token: CommandToken
     sent_at: float
     correlation_deadline: float
+
+
+@dataclass(slots=True)
+class Delivery:
+    """An operation accepted by MQTT is unresolved until device evidence arrives."""
+
+    request: SendRequest
+    completed_at: float = float("inf")
+    started_at: float | None = None
+    resolved: set[str] = field(default_factory=set)
 
 
 class Reconciler:
@@ -162,6 +174,12 @@ class Reconciler:
         self._last_led_publish: dict[str, tuple[str, float]] = {}
         self._capabilities: dict[str, LightCapabilities] = {}
         self._probes: dict[tuple, tuple[int, float, asyncio.Task[SendResult]]] = {}
+        self._deliveries: dict[str, Delivery] = {}
+        self._reads: dict[str, Delivery] = {}
+        self._delivery_changed = asyncio.Event()
+        self._verification_tasks: set[asyncio.Task] = set()
+        self._last_led_request: dict[str, SendRequest] = {}
+        self._led_baseline: dict[str, tuple[int, int]] = {}
         self._sequence = count()
         self._blocked: set[str] = set()
         self._arbiter = CommandArbiter(
@@ -178,7 +196,35 @@ class Reconciler:
         if self._metrics is not None:
             self._metrics.count(name)
 
+    def _trace(self, event: str, item: str, **details) -> None:
+        if self._metrics is not None:
+            obs = self._observations.snapshot(item)
+            self._metrics.trace(
+                {
+                    "event": event,
+                    "time": self._clock.now(),
+                    "light_id": item,
+                    "generation": self._desired.get(item).generation,
+                    "power_epoch": obs.power_epoch,
+                    "bridge_epoch": obs.bridge_epoch,
+                    "control_epoch": self._control_epoch,
+                    **details,
+                }
+            )
+
     def _published(self, request: SendRequest, sent_at: float) -> None:
+        for token in request.tokens:
+            self._trace(
+                "read" if request.kind == CommandKind.PROBE else "publish",
+                token.light_id,
+                operation=request.operation_id,
+                kind=request.kind.value,
+                sent_generation=token.generation,
+                values=request.payload,
+            )
+        for delivery in (*self._deliveries.values(), *self._reads.values()):
+            if delivery.request.operation_id == request.operation_id:
+                delivery.started_at = sent_at
         self._count("commands_published")
         if request.kind in _KIND_COUNTERS:
             self._count(_KIND_COUNTERS[request.kind])
@@ -194,6 +240,8 @@ class Reconciler:
             CommandKind.LED_OFF,
         ):
             for token in request.tokens:
+                if request.kind == CommandKind.LED_OFF:
+                    self._led_baseline.pop(token.light_id, None)
                 self._last_led_publish[token.light_id] = (
                     request.operation_id,
                     float("inf"),
@@ -293,18 +341,91 @@ class Reconciler:
 
     def _led_matches(self, item, desired, observed) -> bool:
         published = self._last_led_publish.get(item)
+        request = self._last_led_request.get(item)
         return (
             observed.led_state == SwitchState.ON
             and observed.led_quality == EvidenceQuality.DEVICE_REPORT
             and observed.led_retained is False
             and observed.led_received_at is not None
-            and (published is None or observed.led_received_at > published[1])
+            and (
+                published is None
+                or (
+                    request is not None
+                    and self._payload_matches(request.payload, observed, published[1])
+                )
+            )
             and self._matches_parameters(item, desired, observed)
         )
 
     async def _send_request(self, request: SendRequest) -> SendResult:
+        read_device = None
+        if request.kind == CommandKind.PROBE:
+            circuit = self._circuits[request.tokens[0].light_id]
+            if request.topic == circuit.led_topic.removesuffix("/set") + "/get":
+                read_device = circuit.led_device or circuit.led_topic
+                while read_device in self._reads:
+                    self._delivery_changed.clear()
+                    if not self._is_current(request):
+                        return SendResult(SendStatus.STALE, "stale")
+                    if request.priority == CommandPriority.OFF:
+                        # Share the read without extending the OFF deadline.
+                        return SendResult(SendStatus.SENT)
+                    await self._delivery_changed.wait()
+                self._reads[read_device] = Delivery(request)
+        # Reserve physical devices atomically, including every multicast member.
+        # Waiting tasks carry tokens, so newer intentions replace them rather
+        # than forming a FIFO of historical slider positions.
+        devices = self._delivery_devices(request)
+        while devices:
+            self._delivery_changed.clear()
+            if not self._is_current(request):
+                return SendResult(SendStatus.STALE, "stale")
+            for previous in tuple(self._deliveries.values()):
+                if previous.started_at is None and not self._is_current(
+                    previous.request
+                ):
+                    self._release_delivery(previous)
+            if not any(key in self._deliveries for key in devices):
+                if request.kind in (CommandKind.LED_SET, CommandKind.GROUP_SET):
+                    payload = {}
+                    for token in request.tokens:
+                        payload.update(self.led_payload(token.light_id))
+                    request = SendRequest(
+                        request.topic,
+                        payload,
+                        request.tokens,
+                        request.resources,
+                        request.priority,
+                        request.operation_id,
+                        request.kind,
+                        request.topology_version,
+                    )
+                    if set(request.payload) <= {"transition"}:
+                        return SendResult(SendStatus.SENT)
+                delivery = Delivery(request)
+                for key in devices:
+                    self._deliveries[key] = delivery
+                break
+            await self._delivery_changed.wait()
         result = await self._arbiter.send(request)
-        if result.status == SendStatus.SENT:
+        if read_device:
+            if self._reads[read_device].started_at is not None:
+                self._reads[read_device].completed_at = self._clock.now()
+            else:
+                self._reads.pop(read_device, None)
+                self._delivery_changed.set()
+        if result.status == SendStatus.SENT or (
+            devices and delivery.started_at is not None
+        ):
+            for token in request.tokens:
+                self._trace(
+                    "mqtt_complete",
+                    token.light_id,
+                    operation=request.operation_id,
+                    status=result.status.value,
+                )
+            if devices:
+                delivery.completed_at = self._clock.now()
             for token in request.tokens:
                 published = self._last_led_publish.get(token.light_id)
                 if published is not None and published[0] == request.operation_id:
@@ -312,7 +433,144 @@ class Reconciler:
                         request.operation_id,
                         self._clock.now(),
                     )
+                    self._last_led_request[token.light_id] = request
+            if (
+                result.status == SendStatus.SENT
+                and devices
+                and request.kind in (CommandKind.LED_SET, CommandKind.GROUP_SET)
+            ):
+                task = asyncio.create_task(self._verify_delivery(delivery))
+                self._verification_tasks.add(task)
+                task.add_done_callback(self._verification_tasks.discard)
+        elif devices:
+            self._release_delivery(delivery)
         return result
+
+    def _delivery_devices(self, request: SendRequest) -> tuple[str, ...]:
+        if request.kind not in (
+            CommandKind.LED_SET,
+            CommandKind.GROUP_SET,
+            CommandKind.RELAY_ON,
+        ):
+            return ()
+        relay = request.kind == CommandKind.RELAY_ON
+        return tuple(
+            dict.fromkeys(
+                (c.relay_device or c.relay_topic)
+                if relay
+                else (c.led_device or c.led_topic)
+                for token in request.tokens
+                for c in (self._circuits[token.light_id],)
+            )
+        )
+
+    def _release_delivery(self, delivery: Delivery) -> None:
+        self._deliveries = {
+            key: value
+            for key, value in self._deliveries.items()
+            if value is not delivery
+        }
+        self._delivery_changed.set()
+
+    def _delivery_confirmed(self, delivery: Delivery) -> bool:
+        request = delivery.request
+        for token in request.tokens:
+            if token.light_id in delivery.resolved:
+                continue
+            obs = self._observations.snapshot(token.light_id)
+            if obs.bridge_epoch != token.bridge_epoch:
+                continue
+            if request.kind == CommandKind.RELAY_ON:
+                if self._trusted_relay(
+                    token.light_id, SwitchState.ON, delivery.completed_at
+                ):
+                    delivery.resolved.add(token.light_id)
+            elif self._trusted_relay(
+                token.light_id, SwitchState.OFF, delivery.started_at
+            ) or (
+                obs.power_epoch == token.power_epoch
+                and obs.led_quality == EvidenceQuality.DEVICE_REPORT
+                and obs.led_retained is False
+                and self._payload_matches(request.payload, obs, delivery.completed_at)
+            ):
+                delivery.resolved.add(token.light_id)
+        return len(delivery.resolved) == len(request.tokens)
+
+    @staticmethod
+    def _payload_matches(payload, observed, after: float) -> bool:
+        values = {
+            "state": observed.led_state.value,
+            "brightness": observed.brightness,
+            "color_temp": kelvin_to_mired(observed.color_temp_kelvin)
+            if observed.color_temp_kelvin
+            else None,
+        }
+        times = dict(observed.attribute_times)
+        return all(
+            values[key] == value and times.get(key, float("-inf")) > after
+            for key, value in payload.items()
+            if key != "transition"
+        )
+
+    async def _verify_delivery(self, delivery: Delivery) -> None:
+        # One read belongs to the sent operation, independent of slider workers.
+        # It is needed even if a newer goal is waiting behind this operation.
+        await self._clock.sleep(self._policy.slider_coalesce_ms / 1000)
+        if not self._probe_enabled or delivery not in self._deliveries.values():
+            return
+        for token in delivery.request.tokens:
+            item = token.light_id
+            obs = self._observations.snapshot(item)
+            if (
+                not self._desired.get(item).on
+                or obs.power_epoch != token.power_epoch
+                or obs.bridge_epoch != token.bridge_epoch
+                or self._closed
+            ):
+                continue
+            task = asyncio.create_task(self._read_delivery(delivery, token))
+            self._verification_tasks.add(task)
+            task.add_done_callback(self._verification_tasks.discard)
+        await self._clock.sleep(
+            max(
+                0.0,
+                delivery.completed_at
+                + self._policy.verification_timeout_ms / 1000
+                - self._clock.now(),
+            )
+        )
+        if delivery in self._deliveries.values():
+            for token in delivery.request.tokens:
+                self._trace(
+                    "timeout",
+                    token.light_id,
+                    operation=delivery.request.operation_id,
+                    stage="device_confirmation",
+                    elapsed=self._clock.now() - delivery.completed_at,
+                )
+                if self._desired.get(token.light_id).on:
+                    self._reasons[token.light_id] = "delivery_confirmation_timeout"
+                    self._announce({token.light_id})
+
+    async def _read_delivery(self, delivery: Delivery, token: CommandToken) -> None:
+        """Renew only a never-published read when a slider changes its token."""
+        item = token.light_id
+        while delivery in self._deliveries.values() and item not in delivery.resolved:
+            obs = self._observations.snapshot(item)
+            if (
+                not self._current(item, self._desired.get(item).generation)
+                or not self._desired.get(item).on
+                or obs.power_epoch != token.power_epoch
+                or obs.bridge_epoch != token.bridge_epoch
+                or self._control_epoch != token.control_epoch
+            ):
+                return
+            payload = {
+                key: "" for key in delivery.request.payload if key != "transition"
+            }
+            result = await asyncio.shield(self._send(item, CommandKind.PROBE, payload))
+            if result.status != SendStatus.STALE:
+                return
 
     def _matches_parameters(self, item, desired, observed) -> bool:
         capabilities = self._capabilities.get(item)
@@ -337,6 +595,7 @@ class Reconciler:
             return
         self._enabled = enabled
         self._control_epoch += 1
+        self._delivery_changed.set()
         if not enabled:
             for item in self._circuits:
                 worker = self._workers.get(item)
@@ -457,6 +716,7 @@ class Reconciler:
                 k: v for k, v in self._probes.items() if k[0] not in light_ids
             }
         result = self._desired.apply(light_ids, patch, source=source, force=renew)
+        self._delivery_changed.set()
         changed = {item for item in light_ids if result[item] != before[item]}
         if patch.on is False:
             changed.update(
@@ -464,7 +724,18 @@ class Reconciler:
                 for item in light_ids
                 if not self._trusted_relay(item, SwitchState.OFF)
             )
-        for item in changed:
+        for item in light_ids:
+            if item not in changed:
+                continue
+            self._trace(
+                "intent",
+                item,
+                values={
+                    "on": result[item].on,
+                    "brightness": result[item].brightness,
+                    "color_temp_kelvin": result[item].color_temp_kelvin,
+                },
+            )
             if result[item].on:
                 pending_off = self._led_off_pending.pop(item, None)
                 if pending_off is not None:
@@ -517,6 +788,42 @@ class Reconciler:
             self._control_epoch += 1
 
     def notify(self, delta: ObservationDelta) -> None:
+        for device, read in tuple(self._reads.items()):
+            obs = self._observations.snapshot(read.request.tokens[0].light_id)
+            times = dict(obs.read_response_times)
+            if all(
+                times.get(key, float("-inf")) > read.completed_at
+                for key in read.request.payload
+            ) or self._trusted_relay(
+                read.request.tokens[0].light_id, SwitchState.OFF, read.completed_at
+            ):
+                self._reads.pop(device, None)
+                self._delivery_changed.set()
+        for delivery in tuple(
+            {id(value): value for value in self._deliveries.values()}.values()
+        ):
+            if self._delivery_confirmed(delivery):
+                self._release_delivery(delivery)
+                if delivery.request.kind != CommandKind.RELAY_ON:
+                    for token in delivery.request.tokens:
+                        if (
+                            self._last_led_publish.get(token.light_id, (None,))[0]
+                            == delivery.request.operation_id
+                        ):
+                            self._led_baseline[token.light_id] = (
+                                token.power_epoch,
+                                token.bridge_epoch,
+                            )
+            elif (
+                all(
+                    self._trusted_relay(
+                        t.light_id, SwitchState.OFF, delivery.started_at
+                    )
+                    for t in delivery.request.tokens
+                )
+                and delivery.started_at is not None
+            ):
+                self._release_delivery(delivery)
         if delta.bridge_changed and self._observations.bridge_online is False:
             self._control_epoch += 1
             for item in self._circuits:
@@ -541,6 +848,35 @@ class Reconciler:
                     self._events[item].set()
                     continue
                 obs = self._observations.snapshot(item)
+                self._trace(
+                    "report",
+                    item,
+                    values={
+                        "relay_state": obs.relay_state.value,
+                        "state": obs.led_state.value,
+                        "brightness": obs.brightness,
+                        "color_temp_kelvin": obs.color_temp_kelvin,
+                    },
+                    attribute_times=dict(obs.attribute_times),
+                    relay_received_at=obs.relay_received_at,
+                    evidence=obs.led_quality.value,
+                    retained=obs.led_retained,
+                    relay_quality=obs.relay_quality.value,
+                    relay_retained=obs.relay_retained,
+                    read_response_times=dict(obs.read_response_times),
+                )
+                pending_off = self._off_pending.get(item)
+                if (
+                    pending_off
+                    and self._trusted_relay(item, SwitchState.OFF, pending_off[0])
+                    and not self._desired.get(item).on
+                    and (worker := self._workers.get(item)) is not None
+                    and worker.done()
+                ):
+                    self._off_pending.pop(item, None)
+                    self._led_off_pending.pop(item, None)
+                    self._machines[item].advance(Event.OFF_REQUESTED)
+                    self._phase(item, Phase.OFF)
                 flight = self._in_flight.get(item)
                 matched = (
                     flight is not None
@@ -551,7 +887,32 @@ class Reconciler:
                     < obs.relay_received_at
                     <= flight.correlation_deadline
                 )
-                own_off = matched and flight.target_state == SwitchState.OFF
+                pending_on = self._relay_pending.get(item)
+                if (
+                    pending_on is not None
+                    and self._desired.get(item).on
+                    and self._trusted_relay(item, SwitchState.ON, pending_on[0])
+                    and (worker := self._workers.get(item)) is not None
+                    and worker.done()
+                    and self._reasons[item] == "relay_confirmation_timeout"
+                ):
+                    self._workers[item] = asyncio.create_task(
+                        self._run(item, self._desired.get(item).generation)
+                    )
+                own_off = (matched and flight.target_state == SwitchState.OFF) or (
+                    pending_off is not None
+                    and self._trusted_relay(item, SwitchState.OFF, pending_off[0])
+                )
+                if (
+                    own_off
+                    and self._desired.get(item).on
+                    and (worker := self._workers.get(item)) is not None
+                    and worker.done()
+                    and self._machines[item].phase == Phase.ERROR
+                ):
+                    self._workers[item] = asyncio.create_task(
+                        self._run(item, self._desired.get(item).generation)
+                    )
                 if matched:
                     self._in_flight.pop(item, None)
                 interrupted = self._interrupted_on.get(item)
@@ -727,6 +1088,19 @@ class Reconciler:
                 callback(ids)
 
     def _phase(self, item: str, phase: Phase, reason: str | None = None) -> None:
+        now = self._clock.now()
+        self._trace(
+            "phase",
+            item,
+            phase=phase.value,
+            reason=reason,
+            elapsed=now - self._phase_since.get(item, now),
+        )
+        if reason and "timeout" in reason:
+            self._trace("timeout", item, stage=reason)
+        if phase == Phase.ON:
+            obs = self._observations.snapshot(item)
+            self._led_baseline[item] = (obs.power_epoch, obs.bridge_epoch)
         events = {
             Phase.POWERING: Event.POWER_REQUESTED,
             Phase.WAITING_READY: Event.POWER_CONFIRMED,
@@ -944,7 +1318,7 @@ class Reconciler:
 
     def _off_interval_elapsed(self, item: str) -> bool:
         observation = self._observations.snapshot(item)
-        reference = observation.power_off_at
+        reference = observation.relay_off_since
         if reference is None:
             # A first OFF observation does not reveal when the relay switched;
             # waiting from its receipt is conservative, not a physical timestamp.
@@ -1092,9 +1466,7 @@ class Reconciler:
                 self._phase(item, Phase.OFF, warning)
                 return
         pending = self._off_pending.get(item)
-        if pending and self._clock.now() < (
-            pending[0] + self._policy.relay_command_timeout_ms / 1000
-        ):
+        if pending:
             started, send = pending
             result = await asyncio.shield(send)
             if not self._current(item, generation):
@@ -1144,6 +1516,9 @@ class Reconciler:
             result = await asyncio.shield(send)
             if not self._current(item, generation):
                 return
+            if self._trusted_relay(item, SwitchState.OFF, started):
+                # Device evidence can settle even an unknown MQTT outcome.
+                result = SendResult(SendStatus.SENT)
             if result.status not in (SendStatus.SENT, SendStatus.STALE):
                 self._phase(item, Phase.ERROR, result.reason or "relay_off_uncertain")
                 return
@@ -1234,7 +1609,7 @@ class Reconciler:
                 self._phase(item, Phase.ERROR, "relay_state_unknown")
                 return
             observation = self._observations.snapshot(item)
-            off_reference = observation.power_off_at
+            off_reference = observation.relay_off_since
             if off_reference is None:
                 off_reference = observation.relay_received_at
             delay = (
@@ -1257,7 +1632,10 @@ class Reconciler:
             result = await asyncio.shield(send)
             if not self._current(item, generation):
                 return
-            if result.status != SendStatus.SENT:
+            if result.status != SendStatus.SENT and not (
+                result.status == SendStatus.STALE
+                and self._trusted_relay(item, SwitchState.ON, started)
+            ):
                 self._phase(item, Phase.ERROR, result.reason or "relay_on_failed")
                 return
             confirmed = await self._wait(
@@ -1391,14 +1769,6 @@ class Reconciler:
         ready_epoch: int,
         bridge_epoch: int,
     ) -> None:
-        if self._probe_enabled:
-            result, _started = await self._probe(item, "verify")
-            if not self._current(item, generation):
-                return
-            if result.status != SendStatus.SENT:
-                self._reasons[item] = result.reason or "verification_read_failed"
-                self._announce({item})
-                return
         confirmed = await self._wait(
             item,
             generation,
@@ -1410,8 +1780,7 @@ class Reconciler:
                 and obs.led_quality == EvidenceQuality.DEVICE_REPORT
                 and obs.led_retained is False
                 and obs.led_received_at is not None
-                and obs.led_received_at > send_completed
-                and self._matches_parameters(item, target, obs)
+                and self._led_matches(item, target, obs)
             ),
             self._policy.verification_timeout_ms / 1000,
         )
@@ -1440,6 +1809,19 @@ class Reconciler:
                 if capability
                 else kelvin_to_mired(target.color_temp_kelvin)
             )
+        observed = self._observations.snapshot(light_id)
+        if (
+            self._led_baseline.get(light_id)
+            == (observed.power_epoch, observed.bridge_epoch)
+            and observed.led_state == SwitchState.ON
+            and observed.led_quality == EvidenceQuality.DEVICE_REPORT
+            and observed.led_retained is False
+        ):
+            for key, value in tuple(payload.items()):
+                if key != "transition" and self._payload_matches(
+                    {key: value}, observed, float("-inf")
+                ):
+                    del payload[key]
         return payload
 
     def send_group(
@@ -1469,11 +1851,16 @@ class Reconciler:
         if self._closed:
             return
         self._closed = True
+        self._delivery_changed.set()
         preparations = tuple(self._preparations)
-        for task in (*self._workers.values(), *preparations):
+        verifications = tuple(self._verification_tasks)
+        for task in (*self._workers.values(), *preparations, *verifications):
             task.cancel()
         await asyncio.gather(
-            *self._workers.values(), *preparations, return_exceptions=True
+            *self._workers.values(),
+            *preparations,
+            *verifications,
+            return_exceptions=True,
         )
         await self._arbiter.close()
         if self._sends:

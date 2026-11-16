@@ -259,3 +259,79 @@ async def test_disconnect_during_read_never_replays_old_on(pilot, during_boot):
     await rig.advance(12)
     assert traffic(rig) == before
     assert not rig.runtime.snapshot("light_a").desired.on
+
+
+@pytest.mark.parametrize("pilot", ["individual", "wait_all"], indirect=True)
+async def test_nested_ha_groups_coalesce_slider_and_share_repeated_off(pilot):
+    from pytest_homeassistant.common import MockConfigEntry
+
+    rig, raw = pilot
+    relay = "0x0000000000000001"
+    leds = ("0x0000000000000002", "0x0000000000000003")
+    await rig.light("turn_on", "group_a", brightness=100)
+    await rig.advance(0.25)
+    for endpoint in (1, 2):
+        await raw(relay, "genOnOff", {"onOff": 0}, endpoint=endpoint)
+    await rig.advance(0.65)
+    for endpoint in (1, 2):
+        await raw(relay, "genOnOff", {"onOff": 1}, endpoint=endpoint)
+    await rig.advance(3)
+    for ieee in leds:
+        await raw(ieee, "genOnOff", {"onOff": 1})
+    await rig.advance(0.5)
+    for ieee in leds:
+        await raw(ieee, "genOnOff", {"onOff": 1})
+        await raw(ieee, "genLevelCtrl", {"currentLevel": 100})
+    assert rig.runtime.group_snapshot("group_a").confirmed
+    member = rig.entity_id("group_a")
+    parents = []
+    for name in ("nested_inner", "nested_outer"):
+        entry = MockConfigEntry(
+            domain="group",
+            title=name,
+            options={
+                "group_type": "light",
+                "entities": [member],
+                "hide_members": False,
+            },
+        )
+        entry.add_to_hass(rig.hass)
+        assert await rig.hass.config_entries.async_setup(entry.entry_id)
+        await rig.settle()
+        parents.append(entry)
+        member = "light." + name
+    try:
+        before = len(traffic(rig))
+        for value in (255, 56, 191, 56):
+            await rig.hass.services.async_call(
+                "light",
+                "turn_on",
+                {"entity_id": member, "brightness": value},
+                blocking=True,
+            )
+            await rig.advance(0.3)
+        assert [p for t, p in traffic(rig)[before:] if t == GROUP + "/set"] == [
+            {"brightness": 254, "transition": 0}
+        ]
+        for ieee in leds:
+            await raw(ieee, "genLevelCtrl", {"currentLevel": 254})
+        await rig.advance(0.5)
+        assert [p for t, p in traffic(rig)[before:] if t == GROUP + "/set"] == [
+            {"brightness": 254, "transition": 0},
+            {"brightness": 56, "transition": 0},
+        ]
+        before_off = len(traffic(rig))
+        for _ in range(4):
+            await rig.hass.services.async_call(
+                "light", "turn_off", {"entity_id": member}, blocking=True
+            )
+            await rig.advance(0.3)
+        await rig.advance(10)
+        cuts = [p for t, p in traffic(rig)[before_off:] if t == RELAY + "/set"]
+        assert sorted(tuple(p.items()) for p in cuts) == [
+            (("state_l1", "OFF"),),
+            (("state_l2", "OFF"),),
+        ]
+    finally:
+        for entry in reversed(parents):
+            await rig.hass.config_entries.async_unload(entry.entry_id)

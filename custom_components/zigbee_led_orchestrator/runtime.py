@@ -402,6 +402,8 @@ class Runtime:
             f"{self.config.base_topic}:{channel.device_ieee}:{channel.endpoint}:{channel.state_key}",
             f"{self.config.base_topic}:{light.device_ieee}:{light.endpoint}",
             channel.state_key,
+            f"{self.config.base_topic}:{channel.device_ieee}",
+            f"{self.config.base_topic}:{light.device_ieee}",
         )
 
     def _group_circuit(self, group) -> GroupCircuit | None:
@@ -682,6 +684,8 @@ class Runtime:
             raise KeyError(light_id)
         redact = self._redactor()
         data: dict[str, object] = {
+            "captured_at_unix": time.time(),
+            "monotonic_time": self._clock.now(),
             "runtime_version": RUNTIME_VERSION,
             "mode": self.mode.value,
             "group_readiness_strategy": self.config.policies.group_readiness_strategy,
@@ -702,6 +706,39 @@ class Runtime:
         snapshot = self.metrics.snapshot()
         data["counters"] = snapshot["counters"]
         data["boot_samples"] = snapshot["boot"]
+        aliases = {
+            item.id: f"light_{index}"
+            for index, item in enumerate(self.config.lights, 1)
+        }
+
+        def scrub(value):
+            if isinstance(value, str):
+                return redact(value)
+            if isinstance(value, list):
+                return [scrub(item) for item in value]
+            if isinstance(value, dict):
+                return {key: scrub(item) for key, item in value.items()}
+            return value
+
+        operations = {
+            event["operation"]: f"operation_{index}"
+            for index, event in enumerate(snapshot["events"], 1)
+            if "operation" in event
+        }
+        data["events"] = [
+            {
+                **scrub(event),
+                "light_id": aliases.get(event["light_id"], "removed_light"),
+                **(
+                    {"operation": operations[event["operation"]]}
+                    if "operation" in event
+                    else {}
+                ),
+            }
+            for event in snapshot["events"]
+            if light_id is None or event["light_id"] == light_id
+        ]
+        data["events_dropped"] = snapshot["events_dropped"]
         for index, light in enumerate(self.config.lights, start=1):
             if light_id is not None and light.id != light_id:
                 continue

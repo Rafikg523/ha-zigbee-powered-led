@@ -62,6 +62,24 @@ async def test_diagnostics_redacts_identifiers(runtime):
     assert data["counters"]["commands_published"] >= 0
     assert data["preferences_error"] is None
     assert data["control_notice"]
+    assert data["events"][0]["event"] == "intent"
+    assert data["events"][0]["light_id"] == "light_1"
+    assert data["events_dropped"] == 0
+
+
+async def test_trace_redacts_historical_operation_ids_after_device_removal(runtime):
+    instance, _ = runtime
+    instance.metrics.trace(
+        {
+            "event": "publish",
+            "light_id": "removed_private_name",
+            "operation": "removed_private_name-1",
+        }
+    )
+    event = instance.diagnostics()["events"][-1]
+    assert event["light_id"] == "removed_light"
+    assert event["operation"].startswith("operation_")
+    assert "removed_private_name" not in json.dumps(event)
 
 
 async def test_diagnostics_scrubs_identifiers_in_reasons_and_errors(runtime):

@@ -128,6 +128,18 @@ Od 0.1.2 instalacja zapisuje tylko połączenie z Zigbee2MQTT i wspólne czasy. 
 Przy luce w sekwencji kanał dowodów jest blokowany do jawnego resync; utracone OFF nie może zostać ukryte przez następne ON. Zakończenie publikacji LED/grupy czyści agregat surowych atrybutów tych LED-ów. Reconciler utrzymuje ponadto znacznik publikacji (w locie = nieznany) i nie pomija korekty ani nie potwierdza celu na podstawie obserwacji sprzed nowszej wysyłki.
 
 
+## Ograniczenie wykonania za MQTT (0.3.6)
+
+Reconciler rozdziela DesiredState, Delivery oraz obserwacje. Delivery rezerwuje fizyczne urządzenia (base topic + IEEE, wspólne dla endpointów/kanałów) do potwierdzenia faktycznie wysłanych pól. Multicast rezerwuje wszystkie urządzenia członków atomowo; dowody członków są zapamiętywane osobno, również gdy członek później zmieni epokę. Niezależne urządzenia nie współdzielą blokady. Arbiter nadal odpowiada za jedną drogę publikacji, tokeny, limit i niepewny wynik MQTT; zakończenie publikacji nie zwalnia Delivery.
+
+Zmiany celu zastępują jeden oczekujący cel. Tokeny budzą i odrzucają stare oczekiwania; po potwierdzeniu payload indywidualny jest ponownie obliczany z najnowszego celu i obserwacji. Pierwsze uruchomienie wysyła pełny cel, kolejne zmiany tylko różniące się pola. Pusty delta payload nie jest publikowany. Timeout nie zwalnia urządzenia; późne zgodne dowody dopuszczają realizację aktualnego celu w ważnej sesji. Późne potwierdzenie przekaźnika może wznowić ważne ON, bez ponowienia przekaźnika ON.
+
+DeviceReports i ObservationStore zachowują osobne attribute_times i read_response_times. Agregowanie raportów nie odświeża innych pól. /set unieważnia w agregacie tylko faktycznie wysłane pola; potwierdzenie wymaga świeżości każdego z nich po zakończeniu publikacji. GET ma osobny limit jednego nierozstrzygniętego odczytu LED na fizyczne urządzenie, zwalniany przez readResponse wymaganych pól lub odcięcie. Weryfikacja należy do wysłanej operacji i przeżywa anulowanie workera suwaka; oczekujący zwykły odczyt podlega generacji i OFF. Odczyty różnych członków grupy uruchamiane są niezależnie.
+
+LED_OFF i RELAY_OFF omijają zwykłe blokady Delivery. Etap LED OFF zachowuje pierwotny deadline 2 s także po kolejnych OFF; niewysłane ustawienia i odczyty tracą uprawnienie. Nierozstrzygnięte RELAY_OFF pozostaje po zakończeniu workera, więc kolejne OFF nie ponawia publikacji. Świeże OFF kończy tę operację, a już zaakceptowane nowe ON wymaga dowodu odcięcia i min_power_off. relay_off_since mierzy ciągłość wiarygodnych raportów OFF; powtarzany stan drugiego kanału nie przesuwa początku tej ciągłości. Zmiana sesji unieważnia ten czas. Nie jest to znacznik fizycznej chwili przełączenia.
+
+Metrics utrzymuje w pamięci 1024 zdarzenia i licznik nadpisań. Diagnose redaguje je rekurencyjnie i zastępuje identyfikatory obwodów/operacji aliasami, także po usunięciu obwodu; eksport podaje powiązanie zegara monotonicznego z Unix. Bufor obejmuje intencje, publikacje, zakończenie MQTT, odczyty, raporty z czasami atrybutów, fazy i timeouty. Nie zastępuje raportu fizycznego testu. Poniższy opis wcześniejszych odczytów należy czytać z tym ograniczeniem.
+
 ## Ograniczone odczyty operacyjne (0.1.0b3)
 
 Przy `report_extension=true` runtime włącza PROBE w reconcilerze. Nowa intencja ON przy nieznanym stanie przekaźnika publikuje jeden `/get` jego skonfigurowanej właściwości i czeka na rzeczywistą odpowiedź. Następnie obowiązuje dotychczasowy odstęp OFF i potwierdzenie ON. Po boot grace, jeżeli brakuje dowodu gotowości LED-a, wykonywany jest jeden odczyt jego stanu; po LED_SET/GROUP_SET każdy członek otrzymuje indywidualny odczyt stanu i wymaganych parametrów. To nie jest polling ani retry `/set`.
