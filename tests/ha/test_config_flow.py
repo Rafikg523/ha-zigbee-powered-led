@@ -29,6 +29,49 @@ async def test_invalid_base_topic_does_not_create_entry(hass, discovery):
     assert result["errors"]["base"] == "invalid_mapping"
 
 
+@pytest.mark.parametrize("strategy", ["individual", "wait_all"])
+async def test_options_group_readiness_settings_preserve_other_configuration(
+    hass, monkeypatch, strategy
+):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=valid_config(), options={"active": True}
+    )
+    entry.add_to_hass(hass)
+    scheduled = []
+    monkeypatch.setattr(hass.config_entries, "async_schedule_reload", scheduled.append)
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    form = await flow.async_step_group_readiness()
+    values = form["data_schema"](
+        {"group_readiness_strategy": strategy, "group_barrier_timeout_ms": 12000}
+    )
+    result = await flow.async_step_group_readiness(values)
+    assert result["type"] == "create_entry"
+    assert entry.data["policies"]["group_readiness_strategy"] == strategy
+    assert entry.data["policies"]["group_barrier_timeout_ms"] == 12000
+    assert entry.data["lights"] == valid_config()["lights"]
+    assert entry.options == {"active": True}
+    assert scheduled == [entry.entry_id]
+
+
+async def test_group_readiness_settings_reject_invalid_strategy_without_saving(hass):
+    from custom_components.zigbee_led_orchestrator.config_flow import OptionsFlow
+
+    entry = MockConfigEntry(domain=DOMAIN, data=valid_config())
+    entry.add_to_hass(hass)
+    flow = OptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    result = await flow.async_step_group_readiness(
+        {"group_readiness_strategy": "unknown", "group_barrier_timeout_ms": 8000}
+    )
+    assert result["errors"] == {"base": "invalid_mapping"}
+    assert entry.data == valid_config()
+
+
 async def test_duplicate_entry_aborts(hass, discovery):
     from custom_components.zigbee_led_orchestrator.config_flow import ConfigFlow
 
@@ -206,6 +249,7 @@ async def test_options_add_circuit_reuses_policies_and_reloads(
         "create_group": "Create group",
         "edit_circuit": "Edit circuit",
         "edit_group": "Edit group",
+        "group_readiness": "Group readiness",
     }
     form = await flow.async_step_add_circuit()
     assert {str(key) for key in form["data_schema"].schema} == {
@@ -272,12 +316,14 @@ def test_menu_labels_follow_the_ha_language():
         "create_group": "Utwórz grupę",
         "edit_circuit": "Edytuj obwód",
         "edit_group": "Edytuj grupę",
+        "group_readiness": "Gotowość grup",
     }
     assert list(menu_options_for("de")) == [
         "add_circuit",
         "create_group",
         "edit_circuit",
         "edit_group",
+        "group_readiness",
     ]
 
 

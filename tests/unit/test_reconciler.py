@@ -435,8 +435,8 @@ async def test_slider_updates_do_not_extend_readiness_deadline(rig):
         engine.submit(("led",), IntentPatch(brightness=value), source="slider")
     await clock.advance(0.81)
     assert len(transport.sent) == 1
-    assert engine.snapshot("led").phase == Phase.ERROR
-    assert engine.snapshot("led").reason == "readiness_timeout"
+    assert engine.snapshot("led").phase == Phase.WAITING_READY
+    assert engine.snapshot("led").reason == "readiness_delayed"
 
 
 async def test_boot_grace_boundary_requires_evidence_and_full_interval(rig):
@@ -463,9 +463,110 @@ async def test_readiness_timeout_boundary_without_led_evidence(rig):
     await clock.advance(7.999)
     assert engine.snapshot("led").phase == Phase.WAITING_READY
     await clock.advance(0.002)
-    assert engine.snapshot("led").phase == Phase.ERROR
-    assert engine.snapshot("led").reason == "readiness_timeout"
+    assert engine.snapshot("led").phase == Phase.WAITING_READY
+    assert engine.snapshot("led").reason == "readiness_delayed"
     assert len(transport.sent) == 1
+
+
+@pytest.mark.parametrize("stop", [None, "off", "disconnect", "disable"])
+async def test_late_readiness_applies_latest_goal_unless_revoked(rig, stop):
+    from custom_components.zigbee_led_orchestrator.models import BridgeObservation
+
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True, brightness=80), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(4)
+    engine.submit(("led",), IntentPatch(brightness=190), source="ui")
+    await clock.advance(12)
+    if stop == "off":
+        engine.submit(("led",), IntentPatch(on=False), source="ui")
+    elif stop == "disconnect":
+        engine.notify(
+            observations.ingest(
+                BridgeObservation(
+                    False, clock.now(), False, EvidenceQuality.DEVICE_REPORT
+                )
+            )
+        )
+    elif stop == "disable":
+        engine.set_enabled(False)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=20)
+    await clock.advance(0.3)
+    payloads = [x.payload for x in transport.sent if x.topic == "example/led/set"]
+    assert payloads == (
+        [] if stop else [{"state": "ON", "brightness": 190, "transition": 0}]
+    )
+    await clock.advance(60)
+    assert len([x for x in transport.sent if x.topic == "example/led/set"]) == len(
+        payloads
+    )
+
+
+async def test_delayed_readiness_still_wakes_at_long_boot_grace(rig):
+    from dataclasses import replace
+
+    clock, transport, observations, engine = rig
+    engine._policy = replace(engine._policy, boot_grace_ms=12000)
+    engine.submit(("led",), IntentPatch(on=True, brightness=90), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=20)
+    await clock.advance(11.9)
+    assert all(x.topic != "example/led/set" for x in transport.sent)
+    await clock.advance(0.3)
+    assert transport.sent[-1].payload == {
+        "state": "ON",
+        "brightness": 90,
+        "transition": 0,
+    }
+
+
+@pytest.mark.parametrize("rig", [True], indirect=True)
+async def test_long_boot_grace_still_gets_one_readiness_probe(rig):
+    from dataclasses import replace
+
+    clock, transport, observations, engine = rig
+    engine._policy = replace(engine._policy, boot_grace_ms=12000)
+    relay(observations, engine, clock, SwitchState.OFF)
+    engine.submit(("led",), IntentPatch(on=True), source="ui")
+    await clock.advance(0.41)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(12.1)
+    assert [x.payload for x in transport.sent if x.topic == "example/led/get"] == [
+        {"state": ""}
+    ]
+    await clock.advance(60)
+    assert [x.payload for x in transport.sent if x.topic == "example/led/get"] == [
+        {"state": ""}
+    ]
+
+
+async def test_delayed_readiness_rejects_retained_and_unknown_reports(rig):
+    clock, transport, observations, engine = rig
+    engine.submit(("led",), IntentPatch(on=True, brightness=90), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(12)
+    for retained, quality in (
+        (True, EvidenceQuality.DEVICE_REPORT),
+        (False, EvidenceQuality.UNKNOWN_SOURCE),
+    ):
+        engine.notify(
+            observations.ingest(
+                LedObservation("led", SwitchState.ON, clock.now(), retained, quality)
+            )
+        )
+        await clock.advance(1)
+    assert all(x.topic != "example/led/set" for x in transport.sent)
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    led(observations, engine, clock, brightness=20)
+    await clock.advance(1)
+    assert not engine.snapshot("led").desired.on
+    assert all(x.topic != "example/led/set" for x in transport.sent)
 
 
 async def test_parameter_changes_while_turning_off_do_not_repeat_relay_off(rig):
@@ -755,7 +856,7 @@ async def test_explicit_on_retries_failed_read_publication_immediately(rig):
 
 
 @pytest.mark.parametrize("rig", [True], indirect=True)
-async def test_new_on_after_readiness_timeout_sends_fresh_led_read(rig):
+async def test_identical_on_while_waiting_late_does_not_repeat_reads(rig):
     clock, transport, observations, engine = rig
     engine.submit(("led",), IntentPatch(on=True), source="ui")
     await clock.advance(0.01)
@@ -763,11 +864,11 @@ async def test_new_on_after_readiness_timeout_sends_fresh_led_read(rig):
     await clock.advance(0.41)
     relay(observations, engine, clock, SwitchState.ON)
     await clock.advance(8.01)
-    assert engine.snapshot("led").reason == "readiness_timeout"
+    assert engine.snapshot("led").reason == "readiness_delayed"
     before = len(transport.sent)
     engine.submit(("led",), IntentPatch(on=True), source="ui")
     await clock.advance(0.01)
-    assert len(transport.sent) == before + 1
+    assert len(transport.sent) == before
     assert transport.sent[-1].topic == "example/led/get"
     assert sum(x.payload == {"state_l1": "ON"} for x in transport.sent) == 1
 

@@ -313,6 +313,7 @@ class PolicyConfig:
     boot_grace_ms: int = 2500
     readiness_timeout_ms: int = 8000
     group_barrier_timeout_ms: int = 8000
+    group_readiness_strategy: str = "individual"
     slider_coalesce_ms: int = 120
     verification_timeout_ms: int = 2000
     relay_command_timeout_ms: int = 3000

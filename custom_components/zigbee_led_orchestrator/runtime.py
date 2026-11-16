@@ -461,6 +461,7 @@ class Runtime:
             engine,
             self._clock,
             barrier_ms=self.config.policies.group_barrier_timeout_ms,
+            strategy=self.config.policies.group_readiness_strategy,
             members={group.id: group.members for group in self.config.groups},
         )
         for light in self.config.lights:
@@ -683,6 +684,8 @@ class Runtime:
         data: dict[str, object] = {
             "runtime_version": RUNTIME_VERSION,
             "mode": self.mode.value,
+            "group_readiness_strategy": self.config.policies.group_readiness_strategy,
+            "group_barrier_timeout_ms": self.config.policies.group_barrier_timeout_ms,
             "report_extension_enabled": self.config.report_extension,
             "report_extension_ready": bool(
                 getattr(getattr(self.adapter, "reports", None), "ready", False)

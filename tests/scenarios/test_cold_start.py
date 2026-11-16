@@ -9,9 +9,12 @@ pytestmark = pytest.mark.parametrize("rig", [True], indirect=True)
 
 
 @pytest.fixture
-async def pilot(rig):
+async def pilot(rig, request):
     config = valid_config()
     config["report_extension"] = True
+    config["policies"]["group_readiness_strategy"] = getattr(
+        request, "param", "individual"
+    )
     await rig.setup(config)
     await rig.publish_catalog()
     request = next(
@@ -53,6 +56,45 @@ async def pilot(rig):
 
 def traffic(rig):
     return [(t, p) for t, p in rig.publications() if t.endswith(("/set", "/get"))]
+
+
+@pytest.mark.parametrize("pilot", ["individual", "wait_all"], indirect=True)
+async def test_late_group_member_recovers_through_real_report_adapter(pilot, request):
+    rig, raw = pilot
+    relay = "0x0000000000000001"
+    await rig.light("turn_on", "group_a", brightness=200)
+    await rig.advance(0.25)
+    for endpoint in (1, 2):
+        await raw(relay, "genOnOff", {"onOff": 0}, endpoint=endpoint)
+    await rig.advance(0.65)
+    for endpoint in (1, 2):
+        await raw(relay, "genOnOff", {"onOff": 1}, endpoint=endpoint)
+    await rig.advance(3)
+    await raw("0x0000000000000002", "genOnOff", {"onOff": 1})
+    await rig.advance(10)
+    assert rig.phase("light_b") == "WAITING_READY"
+    assert rig.runtime.snapshot("light_b").reason == "readiness_delayed"
+    before = traffic(rig)
+    await rig.advance(30)
+    assert traffic(rig) == before
+    await raw("0x0000000000000003", "genOnOff", {"onOff": 1})
+    await rig.advance(0.5)
+    sets = [
+        (t, p) for t, p in traffic(rig) if t.endswith("/set") and t != RELAY + "/set"
+    ]
+    expected_topics = (
+        [GROUP + "/set"]
+        if request.node.callspec.params["pilot"] == "wait_all"
+        else [LED["light_a"] + "/set", LED["light_b"] + "/set"]
+    )
+    assert [t for t, _ in sets] == expected_topics
+    assert all(
+        p == {"state": "ON", "brightness": 199, "transition": 0} for _, p in sets
+    )
+    for ieee in ("0x0000000000000002", "0x0000000000000003"):
+        await raw(ieee, "genOnOff", {"onOff": 1})
+        await raw(ieee, "genLevelCtrl", {"currentLevel": 199})
+    assert rig.runtime.group_snapshot("group_a").confirmed
 
 
 async def test_restart_with_relay_off_and_no_spontaneous_reports_runs_two_cycles(pilot):

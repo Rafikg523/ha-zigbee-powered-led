@@ -75,12 +75,16 @@ class GroupCoordinator:
         *,
         barrier_ms: int,
         members: dict[str, tuple[str, ...]] | None = None,
+        strategy: str = "individual",
     ) -> None:
         if type(barrier_ms) is not int or barrier_ms <= 0:
             raise ValueError("barrier_ms must be a positive integer")
         self._engine = engine
         self._clock = clock
         self._barrier = barrier_ms / 1000
+        if strategy not in ("individual", "wait_all"):
+            raise ValueError("invalid group readiness strategy")
+        self._strategy = strategy
         self._members = dict(members or {})
         self._operations: set[_Operation] = set()
         self._sequence = count()
@@ -163,22 +167,37 @@ class GroupCoordinator:
             group = operation.group
             while True:
                 operation.event.clear()
-                if not self._is_valid(operation) or any(
+                if not self._is_valid(operation):
+                    operation.resolve(_INDIVIDUAL)
+                    return
+                if any(
                     self._engine.snapshot(item).phase == Phase.ERROR
                     for item in group.members
                 ):
-                    operation.resolve(_INDIVIDUAL)
+                    if self._strategy == "wait_all":
+                        for item in group.members:
+                            if self._engine.snapshot(item).phase != Phase.ERROR:
+                                self._engine.abort_member(
+                                    item,
+                                    operation.expected[item],
+                                    "group_member_failed",
+                                )
+                        operation.resolve(
+                            GroupDecision(
+                                GroupAction.ABORT, reason="group_member_failed"
+                            )
+                        )
+                    else:
+                        operation.resolve(_INDIVIDUAL)
                     return
                 if len(operation.arrived) == len(group.members):
                     await self._send(operation)
                     return
                 remaining = deadline - self._clock.now()
                 if remaining <= 0:
-                    for item in group.members:
-                        if item not in operation.arrived:
-                            self._engine.abort_member(
-                                item, operation.expected[item], "group_barrier_timeout"
-                            )
+                    if self._strategy == "wait_all":
+                        await operation.event.wait()
+                        continue
                     operation.resolve(_INDIVIDUAL)
                     return
                 await self._wait(operation, remaining)

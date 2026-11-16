@@ -645,9 +645,6 @@ class Reconciler:
             ):
                 ready = True
                 break
-            remaining = deadline - self._clock.now()
-            if remaining <= 0:
-                break
             if (
                 self._probe_enabled
                 and obs.power_started_at is not None
@@ -665,6 +662,10 @@ class Reconciler:
                     boot_grace_seconds=self._policy.boot_grace_ms / 1000,
                 ):
                     continue
+            remaining = deadline - self._clock.now()
+            if remaining <= 0:
+                await self._wait_delayed_readiness(item, generation, obs)
+                continue
             grace = (
                 (obs.power_started_at or self._clock.now())
                 + self._policy.boot_grace_ms / 1000
@@ -697,6 +698,27 @@ class Reconciler:
     ) -> Callable[[], None]:
         self._subscribers.add(callback)
         return lambda: self._subscribers.discard(callback)
+
+    async def _wait_delayed_readiness(self, item, generation, observation) -> None:
+        if self._reasons[item] != "readiness_delayed":
+            self._reasons[item] = "readiness_delayed"
+            self._count("timeouts")
+            self._announce({item})
+        grace = (
+            observation.power_started_at
+            + self._policy.boot_grace_ms / 1000
+            - self._clock.now()
+            if observation.power_started_at is not None
+            else 0
+        )
+        if grace > 0:
+            await self._wait(
+                item, generation, lambda: False, grace, return_on_event=True
+            )
+        else:
+            # Keep the authorized goal, waking only on new evidence or intent.
+            self._events[item].clear()
+            await self._events[item].wait()
 
     def _announce(self, light_ids) -> None:
         ids = frozenset(light_ids)
@@ -1274,11 +1296,6 @@ class Reconciler:
                 return
             if is_ready(obs, now=self._clock.now(), boot_grace_seconds=boot):
                 break
-            remaining = deadline - self._clock.now()
-            if remaining <= 0:
-                self._readiness_deadlines.pop(item, None)
-                self._phase(item, Phase.ERROR, "readiness_timeout")
-                return
             if (
                 self._probe_enabled
                 and obs.power_started_at is not None
@@ -1301,6 +1318,9 @@ class Reconciler:
                     continue
             # A queued read must not extend the original readiness deadline.
             remaining = max(0.0, deadline - self._clock.now())
+            if remaining <= 0:
+                await self._wait_delayed_readiness(item, generation, obs)
+                continue
             # Wake at the grace boundary as well as on reports.
             grace = (
                 obs.power_started_at + boot - self._clock.now()

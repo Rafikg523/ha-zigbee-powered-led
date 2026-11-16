@@ -21,7 +21,7 @@ LIGHTS = ("a", "b")
 
 
 @pytest.fixture
-async def rig():
+async def rig(request):
     from custom_components.zigbee_led_orchestrator.group_coordinator import (
         GroupCoordinator,
     )
@@ -76,7 +76,10 @@ async def rig():
             )
         )
     coordinator = GroupCoordinator(
-        engine, clock, barrier_ms=policy.group_barrier_timeout_ms
+        engine,
+        clock,
+        barrier_ms=policy.group_barrier_timeout_ms,
+        strategy=getattr(request, "param", "individual"),
     )
     yield clock, transport, observations, engine, coordinator
     await coordinator.close()
@@ -115,6 +118,56 @@ def led(observations, engine, clock, item, *, brightness=None, kelvin=None):
 
 def topics(transport):
     return [x.topic for x in transport.sent]
+
+
+@pytest.mark.parametrize("rig", ["individual", "wait_all"], indirect=True)
+async def test_late_member_finishes_group_goal_in_selected_strategy(rig, request):
+    clock, transport, observations, engine, coordinator = rig
+    coordinator.submit("group", IntentPatch(on=True, brightness=100), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, "a")
+    relay(observations, engine, clock, "b")
+    await clock.advance(0.01)
+    led(observations, engine, clock, "a", brightness=20)
+    await clock.advance(12)
+    before = [x.topic for x in transport.sent if "relay" not in x.topic]
+    led(observations, engine, clock, "b", brightness=20)
+    await clock.advance(0.3)
+    after = [x.topic for x in transport.sent if "relay" not in x.topic]
+    if request.node.callspec.params["rig"] == "wait_all":
+        assert before == []
+        assert after == [GROUP_TOPIC]
+    else:
+        assert before == ["example/led_a/set"]
+        assert after == ["example/led_a/set", "example/led_b/set"]
+
+
+@pytest.mark.parametrize("rig", ["individual", "wait_all"], indirect=True)
+@pytest.mark.parametrize("stop", ["off", "physical_off", "topology", "close"])
+async def test_late_group_wait_is_revoked_before_any_late_send(rig, stop):
+    clock, transport, observations, engine, coordinator = rig
+    coordinator.submit("group", IntentPatch(on=True, brightness=100), source="ui")
+    await clock.advance(0.01)
+    for item in LIGHTS:
+        relay(observations, engine, clock, item)
+    await clock.advance(12)
+    if stop == "off":
+        coordinator.submit("group", IntentPatch(on=False), source="ui")
+    elif stop == "physical_off":
+        for item in LIGHTS:
+            relay(observations, engine, clock, item, SwitchState.OFF)
+    elif stop == "topology":
+        engine.topology_changed(2)
+    else:
+        await coordinator.close()
+        await engine.close()
+        return
+    await clock.advance(0.01)
+    for item in LIGHTS:
+        led(observations, engine, clock, item, brightness=20)
+    await clock.advance(60)
+    assert GROUP_TOPIC not in topics(transport)
+    assert not [x for x in topics(transport) if x.startswith("example/led_")]
 
 
 async def power_both(clock, observations, engine, *, only=LIGHTS):
@@ -157,8 +210,8 @@ async def test_t06_timeout_degrades_to_ready_members_only(rig):
     assert sent == [
         ("example/led_a/set", {"state": "ON", "brightness": 90, "transition": 0})
     ]
-    assert engine.snapshot("b").phase == Phase.ERROR
-    assert engine.snapshot("b").reason == "group_barrier_timeout"
+    assert engine.snapshot("b").phase == Phase.WAITING_READY
+    assert engine.snapshot("b").reason == "readiness_delayed"
     await clock.advance(10)
     assert "example/led_b/set" not in topics(transport)
     assert GROUP_TOPIC not in topics(transport)
@@ -177,6 +230,19 @@ async def test_member_error_degrades_without_waiting_for_barrier(rig):
     assert [x.topic for x in transport.sent if "relay" not in x.topic] == [
         "example/led_a/set"
     ]
+
+
+@pytest.mark.parametrize("rig", ["wait_all"], indirect=True)
+async def test_wait_all_does_not_fall_back_to_individual_on_member_power_error(rig):
+    clock, transport, observations, engine, coordinator = rig
+    coordinator.submit("group", IntentPatch(on=True, brightness=100), source="ui")
+    await clock.advance(0.01)
+    relay(observations, engine, clock, "a")
+    await clock.advance(0.01)
+    led(observations, engine, clock, "a")
+    await clock.advance(12)
+    assert engine.snapshot("b").phase == Phase.ERROR
+    assert not [x for x in topics(transport) if "relay" not in x]
 
 
 async def test_member_off_cancels_pending_group_on(rig):

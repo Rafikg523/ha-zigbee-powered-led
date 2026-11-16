@@ -79,6 +79,18 @@ async def test_t08_external_on_starts_new_epoch(rig):  # noqa: F811
     assert not transport.sent
 
 
+async def test_late_physical_on_readiness_is_observed_without_parameter_restore(rig):  # noqa: F811
+    clock, transport, observations, engine = rig
+    relay(observations, engine, clock, SwitchState.OFF)
+    await clock.advance(0.01)
+    relay(observations, engine, clock, SwitchState.ON)
+    await clock.advance(12)
+    led(observations, engine, clock, brightness=20)
+    await clock.advance(0.1)
+    assert engine.snapshot("led").phase.value == "ON"
+    assert transport.sent == []
+
+
 async def test_fresh_same_on_after_reconnect_can_execute(rig):  # noqa: F811
     clock, transport, observations, engine = rig
     engine.submit(("led",), IntentPatch(on=True), source="ui")
