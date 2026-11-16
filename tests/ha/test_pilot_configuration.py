@@ -100,6 +100,7 @@ async def test_options_remain_accessible_before_entry_is_loaded(hass):
         "create_group",
         "edit_circuit",
         "edit_group",
+        "group_readiness",
     }
 
 

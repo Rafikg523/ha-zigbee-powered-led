@@ -2,11 +2,11 @@
 
 Integracja Home Assistant dla kontrolerów LED Zigbee, których zasilanie odłączają fizyczne przekaźniki. Przyjmuje najnowszy zamiar użytkownika, czeka na raport przekaźnika i gotowość LED-a, a dopiero potem ustawia jasność i temperaturę barwową. Obwody dodaje się po jednej parze. Opcjonalnie sama zakłada grupę Zigbee2MQTT o nazwie kończącej się na `_orchestrator` i steruje nią dodane LED-y.
 
-**Wersja 0.3.4.** Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania.
+**Wersja 0.3.5.** Testy automatyczne obejmują runtime HA i MQTT z atrapami. Odbiór na rzeczywistym sprzęcie pozostaje do wykonania.
 
 ## Instalacja i konfiguracja
 
-1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration** i zainstaluj wydanie `v0.3.4`.
+1. W HACS dodaj `https://github.com/Rafikg523/ha-zigbee-powered-led` jako własne repozytorium typu **Integration** i zainstaluj wydanie `v0.3.5`.
 2. Zainstaluj i uruchom ponownie Home Assistanta.
 3. W **Ustawienia → Urządzenia i usługi → Dodaj integrację** wybierz **Zigbee LED Orchestrator**. Instalacja pyta tylko o temat Zigbee2MQTT i wspólne czasy.
 4. Obwód dodasz w **Konfiguruj → Dodaj obwód**: nazwa, na przykład `Kuchnia`, tworzy encję `Kuchnia_orchestrator`, plus kontroler i kanał. Grupę utworzysz w **Konfiguruj → Utwórz grupę**: nazwa, na przykład `Salon`, i wybór już dodanych obwodów. Powstaje grupa i encja `Salon_orchestrator`.
@@ -19,6 +19,7 @@ Przed wyjazdem możesz zakończyć instalację i mapowanie. Przed aktywacją na 
 - Konfiguracja przez UI z istniejącego katalogu Z2M; automatyczny zakres CCT i walidacja endpointów.
 - Ograniczone odczyty przekaźnika i LED-a pozwalają rozpocząć ON bez ręcznego odświeżania stanu, gdy włączono rozszerzenie raportów.
 - Dowolna liczba obwodów dodawanych po jednej parze i niezależnych grup (od jednego członka); ON/OFF, jasność i CCT z barierą gotowości i degradacją indywidualną.
+- **Konfiguruj → Gotowość grup**: niezależne dołączanie po limicie bariery (domyślnie) albo oczekiwanie na wszystkich i wspólna komenda grupowa. Późny wiarygodny raport pozwala zastosować aktualny cel; samo oczekiwanie nie powtarza ON ani odczytów. Tryb wspólny może czekać bezterminowo przy braku raportu.
 - Ostatnia intencja wygrywa, OFF ma priorytet, brak odtwarzania historycznego ON po restarcie lub rozłączeniu.
 - Oddzielne stany celu, obserwacji i potwierdzenia; sensory diagnostyczne i usługi pause/resume/resync/diagnose.
 - Opcjonalne [rozszerzenie Z2M](z2m/orchestrator-reports.mjs) przekazuje rzeczywiste raporty atrybutów, bez wysyłania komend Zigbee.

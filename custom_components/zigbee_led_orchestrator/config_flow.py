@@ -30,19 +30,27 @@ _POLICY_DEFAULTS = (
     ("boot_grace_ms", 2500),
     ("readiness_timeout_ms", 8000),
 )
-_MENU_STEPS = ("add_circuit", "create_group", "edit_circuit", "edit_group")
+_MENU_STEPS = (
+    "add_circuit",
+    "create_group",
+    "edit_circuit",
+    "edit_group",
+    "group_readiness",
+)
 _MENU_LABELS = {
     "en": {
         "add_circuit": "Add circuit",
         "create_group": "Create group",
         "edit_circuit": "Edit circuit",
         "edit_group": "Edit group",
+        "group_readiness": "Group readiness",
     },
     "pl": {
         "add_circuit": "Dodaj obwód",
         "create_group": "Utwórz grupę",
         "edit_circuit": "Edytuj obwód",
         "edit_group": "Edytuj grupę",
+        "group_readiness": "Gotowość grup",
     },
 }
 
@@ -472,6 +480,50 @@ class OptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         return await self.async_step_choose(user_input)
+
+    async def async_step_group_readiness(self, user_input=None):
+        errors = {}
+        data = copy.deepcopy(dict(self.config_entry.data))
+        if user_input is not None:
+            try:
+                data["policies"].update(user_input)
+                validate_config(data)
+            except TypeError, ValueError:
+                errors["base"] = "invalid_mapping"
+            else:
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                if runtime is not None:
+                    runtime.set_mode(ControlMode.OBSERVE)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=data
+                )
+                self.hass.config_entries.async_schedule_reload(
+                    self.config_entry.entry_id
+                )
+                return self.async_create_entry(
+                    title="", data=dict(self.config_entry.options)
+                )
+        policies = self.config_entry.data["policies"]
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    "group_readiness_strategy",
+                    default=policies.get("group_readiness_strategy", "individual"),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=["individual", "wait_all"],
+                        translation_key="group_readiness_strategy",
+                    )
+                ),
+                vol.Required(
+                    "group_barrier_timeout_ms",
+                    default=policies.get("group_barrier_timeout_ms", 8000),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            }
+        )
+        return self.async_show_form(
+            step_id="group_readiness", data_schema=schema, errors=errors
+        )
 
     async def async_step_choose(self, user_input=None):
         menu = menu_options_for(self.hass.config.language)

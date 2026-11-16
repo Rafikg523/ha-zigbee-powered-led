@@ -47,6 +47,19 @@ def valid_config():
 
 
 class TestConfiguration(unittest.TestCase):
+    def test_group_readiness_strategy_is_validated(self):
+        for strategy in ("individual", "wait_all"):
+            config = valid_config()
+            config["policies"]["group_readiness_strategy"] = strategy
+            self.assertEqual(
+                self.validate(config).policies.group_readiness_strategy, strategy
+            )
+        for strategy in (True, 1, "unknown", None, []):
+            config = valid_config()
+            config["policies"]["group_readiness_strategy"] = strategy
+            with self.assertRaisesRegex(ValueError, "group_readiness_strategy"):
+                self.validate(config)
+
     def validate(self, config):
         from custom_components.zigbee_led_orchestrator.configuration import (
             validate_config,

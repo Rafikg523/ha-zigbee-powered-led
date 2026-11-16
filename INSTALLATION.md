@@ -42,7 +42,18 @@ Przejdź przez [TESTING.md](TESTING.md). Po sprawdzeniu kopii/rollbacku, mapowan
 
 Od wersji 0.1.0b5, przy włączonym rozszerzeniu raportów, nowe ON samo odczytuje stan nieznanego przekaźnika. Po potwierdzonym zasileniu LED-a i minimalnym czasie rozruchu może wykonać jeden odczyt gotowości, a po ustawieniu parametrów jeden odczyt potwierdzający. Nie trzeba wcześniej ręcznie przełączać ani odświeżać urządzeń w Z2M. Odczyty idą przez arbiter i MQTT HA, bez retain; OFF, zmiana sesji i celu anulują przyszłe nieaktualne operacje. Brak odpowiedzi kończy się timeoutem, bez pętli odczytów lub ponowień `/set`. Czas rozruchu i timeouty nadal wymagają pomiaru dla konkretnego kontrolera. Bez rozszerzenia zwykłe MQTT pozostaje niewiarygodnym źródłem potwierdzenia.
 
-Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.3.4`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+Po aktualizacji **uruchom ponownie cały Home Assistant** i odśwież kartę przeglądarki. Samo pobranie plików nie wystarcza do wymiany załadowanego kodu. Usługa `zigbee_led_orchestrator.diagnose` zwraca `runtime_version`; dla tego wydania musi pokazać `0.3.5`. Sterowanie włącza się samo. Żadne stare ON nie jest odtwarzane. Nie usuwaj wpisu integracji ani rozszerzenia Zigbee2MQTT.
+
+## Późna gotowość i synchronizacja grup (0.3.5)
+
+**Konfiguruj → Gotowość grup** zawiera dwa tryby wspólne dla grup tego wpisu:
+
+- **Po limicie: niezależne obwody i późne dołączanie** (domyślny): przez ustawiony limit bariery integracja próbuje wykonać wspólny start. Potem gotowi członkowie dostają osobne komendy. Spóźniony członek nadal czeka na dowód gotowości i stosuje najnowszy cel indywidualnie.
+- **Czekaj na wszystkich: wspólna komenda grupowa**: integracja czeka na wszystkich tak długo, jak ważny jest cel i zasilanie, po czym wysyła jeden multicast. Limit bariery nie kończy tego oczekiwania. Brak raportu jednego kontrolera może wstrzymać całą grupę bezterminowo. Błąd potwierdzenia zasilania członka kończy wspólną operację błędem.
+
+Po przekroczeniu readiness_timeout_ms obwód pozostaje w WAITING_READY z reason=readiness_delayed. Oczekiwanie reaguje na wiarygodne raporty i nie generuje pętli odczytów ani ponowień /set. Jeśli raport nigdy nie nadejdzie, cel pozostanie niezrealizowany; stan ON encji oznacza zamiar, a nie potwierdzone światło. Timeout potwierdzenia przekaźnika nadal jest błędem, a nie zgodą na ponowienie ON.
+
+Zmiana celu, OFF, fizyczne odcięcie, pauza, rozłączenie i przeładowanie przerywają odpowiednie stare oczekiwanie. Późna gotowość nie odtwarza ON z wcześniejszej sesji. Zmiana jasności/CCT podczas oczekiwania zastępuje parametry celu. Zmiana celu pojedynczego członka rozwiązuje wspólną operację, a pozostali realizują swoje aktualne cele indywidualnie. Wspólna komenda wymaga identycznych docelowych payloadów członków; różne zapamiętane jasności/CCT również powodują obsługę indywidualną. Zapis ustawień przeładowuje integrację bez odtwarzania starego ON. Pola group_readiness_strategy i group_barrier_timeout_ms są dostępne w diagnose.
 
 ## Powrót do poprzedniego sterowania
 

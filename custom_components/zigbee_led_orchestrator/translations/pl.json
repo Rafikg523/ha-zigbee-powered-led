@@ -33,7 +33,16 @@
           "add_circuit": "Dodaj obwód",
           "create_group": "Utwórz grupę",
           "edit_circuit": "Edytuj obwód",
-          "edit_group": "Edytuj grupę"
+          "edit_group": "Edytuj grupę",
+          "group_readiness": "Gotowość grup"
+        }
+      },
+      "group_readiness": {
+        "title": "Gotowość grup",
+        "description": "Po limicie bariery tryb indywidualny zwalnia gotowe obwody, a spóźnione dołączają po wiarygodnym raporcie. Tryb wspólny czeka na wszystkich bez końcowego limitu i wysyła jedną komendę grupową; jeden brakujący raport wstrzymuje grupę. OFF, rozłączenie i przeładowanie anulują oczekiwanie. Zapis przeładowuje integrację bez odtwarzania ON.",
+        "data": {
+          "group_readiness_strategy": "Sposób oczekiwania",
+          "group_barrier_timeout_ms": "Limit wspólnego startu przed rozdzieleniem obwodów (ms, tryb indywidualny)"
         }
       },
       "add_circuit": {
@@ -167,6 +176,14 @@
           "name": "Światło",
           "description": "Ogranicz do jednego światła."
         }
+      }
+    }
+  },
+  "selector": {
+    "group_readiness_strategy": {
+      "options": {
+        "individual": "Po limicie: niezależne obwody i późne dołączanie",
+        "wait_all": "Czekaj na wszystkich: wspólna komenda grupowa"
       }
     }
   },

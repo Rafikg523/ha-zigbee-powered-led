@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 — późna gotowość i wybór synchronizacji grup
+
+- Po przekroczeniu czasu gotowości obwód zachowuje aktualny cel i czeka na wiarygodny raport w tej samej epoce zasilania. Raport uruchamia zastosowanie najnowszej jasności/CCT bez ponawiania przekaźnika ON. Faza pozostaje WAITING_READY z powodem readiness_delayed; oczekiwanie nie generuje cyklicznych odczytów ani komend.
+- **Konfiguruj → Gotowość grup** pozwala wybrać domyślne niezależne dołączanie po limicie bariery albo oczekiwanie na wszystkich i wspólną komendę grupową. Limit bariery jest edytowalny. W trybie wspólnym brak raportu może wstrzymać grupę bezterminowo; błąd zasilania członka kończy wspólną operację błędem.
+- OFF, fizyczne odcięcie zasilania, pauza, przeładowanie, zmiana topologii i rozłączenie unieważniają oczekiwanie. ON nie jest odtwarzane po restarcie/reconnect. Retained i raporty o nieznanym źródle nadal nie dopuszczają sterowania.
+- Późne raporty po fizycznym ON uzupełniają obserwację bez zmiany jasności przy wyłączonym restore_parameters. Poprawiono też budzenie na końcu czasu rozruchu, gdy jest dłuższy niż limit diagnostyczny gotowości.
+- Po aktualizacji uruchom ponownie cały Home Assistant; diagnose ma pokazać runtime_version 0.3.5. Nie trzeba zmieniać rozszerzenia Z2M. Wydanie nie eliminuje problemów radiowych ani błędów potwierdzeń przekaźników.
+
 ## 0.3.4 — wyszukiwalny wybór urządzeń
 
 - Formularze dodawania i edycji obwodu pozwalają wyszukać kontroler LED lub kanał przekaźnika po wpisaniu fragmentu nazwy urządzenia. Nadal można zapisać wyłącznie pozycję z bieżącego katalogu; ręcznie wpisany, nieznany tekst jest odrzucany.

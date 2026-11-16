@@ -33,7 +33,16 @@
           "add_circuit": "Add circuit",
           "create_group": "Create group",
           "edit_circuit": "Edit circuit",
-          "edit_group": "Edit group"
+          "edit_group": "Edit group",
+          "group_readiness": "Group readiness"
+        }
+      },
+      "group_readiness": {
+        "title": "Group readiness",
+        "description": "After the barrier limit, individual mode releases ready circuits and late members follow when verified reports arrive. Wait-for-all mode waits without a final deadline and sends one group command; a missing report holds the group. OFF, disconnection and reload cancel the wait. Saving reloads the integration without replaying ON.",
+        "data": {
+          "group_readiness_strategy": "Waiting strategy",
+          "group_barrier_timeout_ms": "Shared-start limit before releasing circuits (ms, individual mode)"
         }
       },
       "add_circuit": {
@@ -167,6 +176,14 @@
           "name": "Light",
           "description": "Limit to one light."
         }
+      }
+    }
+  },
+  "selector": {
+    "group_readiness_strategy": {
+      "options": {
+        "individual": "After limit: independent circuits and late recovery",
+        "wait_all": "Wait for everyone: one group command"
       }
     }
   },

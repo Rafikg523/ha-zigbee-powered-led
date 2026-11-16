@@ -184,8 +184,8 @@ async def test_t06_unresponsive_led_degrades_only_its_circuit(ready):
     await rig.report_relay("OFF", "ON")
     await rig.advance(9)
     snapshot = rig.runtime.snapshot("light_b")
-    assert snapshot.phase.value == "ERROR"
-    assert snapshot.reason == "readiness_timeout"
+    assert snapshot.phase.value == "WAITING_READY"
+    assert snapshot.reason == "readiness_delayed"
     assert not snapshot.confirmed
     assert rig.publications() == [(RELAY_SET, {"state_l2": "ON"})]
     assert rig.diagnostics()["counters"]["timeouts"] >= 1
