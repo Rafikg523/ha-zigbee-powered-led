@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6 — ograniczenie zaległych komend i wyłączania
+
+- Rozdzielono najnowszy cel od wysłanej operacji. Na fizyczny kontroler przypada najwyżej jedna nierozstrzygnięta zwykła operacja; zmiany suwaka zastępują jeden oczekujący cel. Multicast rezerwuje kontrolery członków, a kanały przekaźnika współdzielą ograniczenie ON. Niezależne urządzenia pracują równolegle.
+- Po potwierdzonym uruchomieniu zmiana samej jasności lub CCT wysyła tylko zmienione pola. Odczyty LED są współdzielone do readResponse, bez pełnego GET po każdym ruchu suwaka. Potwierdzenia porównuje się z faktycznie wysłanymi polami i świeżością każdego atrybutu.
+- Timeout nie oznacza zakończenia kolejki Z2M: blokada zwykłych wysyłek pozostaje do nowych dowodów. Późne potwierdzenie może odblokować wyłącznie najnowszy ważny cel. OFF usuwa oczekujące ustawienia i omija zwykłą weryfikację.
+- Zachowano LED OFF → przekaźnik i limit 2 s etapu LED. Kolejne OFF współdzielą pierwotną operację także po timeoutcie, bez kolejnych odcięć. Późny raport OFF rozstrzyga wynik; nowe ON wymaga potwierdzenia i minimalnego czasu odcięcia. Powtarzany raport niezmienionego OFF drugiego kanału nie resetuje tego czasu.
+- Diagnose zawiera bufor 1024 zdarzeń (cel, publikacja, zakończenie MQTT, odczyt, raport, faza, timeout), generacje, epoki, wartości i czasy etapów oraz events_dropped. Identyfikatory i operacje eksportowane są jako aliasy; captured_at_unix i monotonic_time umożliwiają odniesienie śladu do logów HA/Z2M.
+- Zachowano oba konfigurowalne tryby gotowości grup z 0.3.5. Testy obejmują opóźnione wykonanie za MQTT, oba kanały przekaźnika, obie strategie i dwie zagnieżdżone grupy HA. Integracja nie zmienia nadrzędnych grup HA; ich uśrednianie może nadal poruszać wskaźnikiem.
+- Po aktualizacji wykonaj pełny restart HA i sprawdź runtime_version 0.3.6. Rozszerzenie Z2M pozostaje bez zmian. Komend już przyjętych przez Z2M nie można anulować; wydanie nie gwarantuje fizycznego OFF w 2 s ani nie zastępuje odbioru sprzętowego.
+
 ## 0.3.5 — późna gotowość i wybór synchronizacji grup
 
 - Po przekroczeniu czasu gotowości obwód zachowuje aktualny cel i czeka na wiarygodny raport w tej samej epoce zasilania. Raport uruchamia zastosowanie najnowszej jasności/CCT bez ponawiania przekaźnika ON. Faza pozostaje WAITING_READY z powodem readiness_delayed; oczekiwanie nie generuje cyklicznych odczytów ani komend.

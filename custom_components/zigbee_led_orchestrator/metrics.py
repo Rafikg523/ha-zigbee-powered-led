@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from copy import deepcopy
 from math import ceil
 
 COUNTERS = (
@@ -34,6 +35,13 @@ class Metrics:
         self._max = max_samples
         self._counters = dict.fromkeys(COUNTERS, 0)
         self._boot: dict[str, deque[float]] = {}
+        self._events: deque[dict] = deque(maxlen=1024)
+        self._events_dropped = 0
+
+    def trace(self, event: dict) -> None:
+        if len(self._events) == self._events.maxlen:
+            self._events_dropped += 1
+        self._events.append(deepcopy(event))
 
     def count(self, name: str, amount: int = 1) -> None:
         if name not in self._counters:
@@ -58,4 +66,9 @@ class Metrics:
                 "p50": self._percentile(ordered, 50),
                 "p95": self._percentile(ordered, 95),
             }
-        return {"counters": dict(self._counters), "boot": boot}
+        return {
+            "counters": dict(self._counters),
+            "boot": boot,
+            "events": deepcopy(list(self._events)),
+            "events_dropped": self._events_dropped,
+        }

@@ -593,7 +593,7 @@ class MqttAdapter:
             )
         finally:
             # Reports that arrived before completion cannot confirm this send.
-            self.reports.invalidate_leds(tuple(affected))
+            self.reports.invalidate_leds(tuple(affected), tuple(payload))
 
     async def close(self) -> None:
         self._closed = True

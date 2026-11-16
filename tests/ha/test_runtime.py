@@ -58,6 +58,16 @@ async def test_first_setup_is_observe_only(runtime):
     assert not adapter.sent
 
 
+async def test_circuit_delivery_identity_uses_ieee_shared_across_relay_channels(
+    runtime,
+):
+    instance, _ = runtime
+    first, second = (instance._circuit_for(light) for light in instance.config.lights)
+    assert first.relay_device == second.relay_device == "zigbee2mqtt:0x0000000000000001"
+    assert first.led_device == "zigbee2mqtt:0x0000000000000002"
+    assert second.led_device == "zigbee2mqtt:0x0000000000000003"
+
+
 async def test_group_membership_change_keeps_the_other_circuits(runtime):
     instance, adapter = runtime
     instance.set_mode(ControlMode.ACTIVE)
