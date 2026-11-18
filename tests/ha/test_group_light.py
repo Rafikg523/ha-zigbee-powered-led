@@ -160,7 +160,7 @@ async def test_platform_creates_group_entity_next_to_lights():
     group_entity = next(
         entity for entity in entities if entity.unique_id.endswith("group_a")
     )
-    assert group_entity.name is None
+    assert group_entity.name == "sterowanie"
     assert group_entity.device_info["name"] == "group_a_orchestrator"
     assert group_entity.device_info["model"] == "Grupa obwodów"
     assert group_entity.device_info["identifiers"] == {

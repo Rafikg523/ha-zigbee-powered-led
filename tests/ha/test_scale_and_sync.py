@@ -215,8 +215,14 @@ async def test_multi_group_setup_in_home_assistant(
     await hass.async_block_till_done()
 
     # Check that each group has an entity in HA
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
     for g in raw["groups"]:
-        entity_id = f"light.{g['name'].replace(' ', '_')}_orchestrator".lower()
+        entity_id = registry.async_get_entity_id(
+            "light", DOMAIN, f"{entry.entry_id}_{g['id']}"
+        )
+        assert entity_id is not None, f"Entity {g['id']} was not created"
         state = hass.states.get(entity_id)
         assert state is not None, f"Entity {entity_id} was not created"
         assert state.attributes["member_count"] == 10

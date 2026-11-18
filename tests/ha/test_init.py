@@ -190,6 +190,48 @@ async def test_existing_light_keeps_entity_id_and_user_name_when_device_is_added
         mqtt_mock._mock_wraps._misc_timer.cancel()
 
 
+async def test_group_control_entity_does_not_reuse_the_z2m_group_name(
+    hass, mqtt_mock, mocked_adapter, enable_custom_integrations
+):
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.zigbee_led_orchestrator.group_provisioner import (
+        group_control_label,
+    )
+
+    data = valid_config()
+    data["groups"][0]["name"] = "Salon"
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    z2m_entity = registry.async_get_or_create(
+        "light",
+        "mqtt",
+        "z2m_salon_group",
+        suggested_object_id="salon_orchestrator",
+    )
+    assert z2m_entity.entity_id == "light.salon_orchestrator"
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert z2m_entity.entity_id == "light.salon_orchestrator"
+    group_entity_id = registry.async_get_entity_id(
+        "light", DOMAIN, f"{entry.entry_id}_group_a"
+    )
+    assert group_entity_id is not None
+    assert group_entity_id != z2m_entity.entity_id
+    assert group_entity_id != f"{z2m_entity.entity_id}_2"
+    assert group_entity_id == "light.salon_orchestrator_control"
+    assert group_entity_id.endswith(f"_{group_control_label(hass.config.language)}")
+    assert group_entity_id != "light.salon_orchestrator"
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    mqtt_entry = hass.config_entries.async_entries("mqtt")[0]
+    await hass.config_entries.async_unload(mqtt_entry.entry_id)
+    if mqtt_mock._mock_wraps._misc_timer is not None:
+        mqtt_mock._mock_wraps._misc_timer.cancel()
+
+
 async def test_two_ha_toggles_during_boot_cancel_pending_on(
     hass, mqtt_mock, mocked_adapter, enable_custom_integrations
 ):

@@ -6,6 +6,7 @@ from custom_components.zigbee_led_orchestrator.configuration import validate_con
 from custom_components.zigbee_led_orchestrator.group_provisioner import (
     CatalogGroup,
     LightEndpoint,
+    group_control_label,
     next_group_action,
     normalize_group_name,
     options_confirmed,
@@ -39,6 +40,14 @@ def test_custom_name_is_used_for_the_entity_and_the_z2m_group():
         normalize_group_name("bridge")
     with pytest.raises(ValueError):
         normalize_group_name("room/group")
+
+
+def test_group_control_label_is_distinct_from_the_z2m_group_name():
+    assert group_control_label("pl") == "sterowanie"
+    assert group_control_label("pl-PL") == "sterowanie"
+    assert group_control_label("en") == "control"
+    assert group_control_label("de") == "control"
+    assert group_control_label("pl") != z2m_group_name("Salon")
 
 
 def test_missing_group_is_created_without_touching_a_user_group():

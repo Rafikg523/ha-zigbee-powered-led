@@ -15,6 +15,7 @@ from .models import GroupConfig
 SUFFIX = "_orchestrator"
 MIN_GROUP_ID = 1
 MAX_GROUP_ID = 65535
+_CONTROL_LABELS = {"en": "control", "pl": "sterowanie"}
 
 
 def normalize_group_name(value: object) -> str:
@@ -36,9 +37,15 @@ def normalize_group_name(value: object) -> str:
 
 
 def z2m_group_name(name: str) -> str:
-    """Friendly name shared by the Z2M group and its Home Assistant entity."""
+    """Friendly name of the Zigbee2MQTT group owned by the integration."""
     base = normalize_group_name(name)
     return f"{base}{SUFFIX}"
+
+
+def group_control_label(language: object) -> str:
+    """Entity label that tells our group control from Z2M's discovery entity."""
+    code = "pl" if str(language).lower().startswith("pl") else "en"
+    return _CONTROL_LABELS[code]
 
 
 @dataclass(frozen=True, slots=True)
