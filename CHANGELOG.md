@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.7 — czytelna nazwa encji grupy
+
+- Encja sterująca grupy tworzonej przez integrację ma teraz etykietę `sterowanie` (`control` w angielskim UI), więc w Home Assistantcie widnieje jako `Salon_orchestrator sterowanie`, obok encji discovery Zigbee2MQTT o nazwie `Salon_orchestrator`. Nowe instalacje dostają przez to `entity_id` z końcówką `_sterowanie` albo `_control`, a nie dopisek `_2` od kolizji nazw.
+- To naprawa issue #17 u źródła: nie zmieniam nazwy grupy w Zigbee2MQTT ani `unique_id` encji, bo to zerwałoby tożsamość istniejących grup i automatyzacji. Zmienia się wyłącznie wyświetlana nazwa encji integracji; istniejące `entity_id` i wpisy rejestru pozostają, a użytkownik może dalej używać swoich dashboardów i skryptów.
+- Test regresyjny zajmuje nazwę `light.salon_orchestrator` encją Z2M i sprawdza, że encja grupy integracji dostaje odrębną nazwę, nie `_2`. Pozostałe testy obejmują etykiety polską i angielską oraz zachowanie `unique_id`.
+- Po aktualizacji uruchom ponownie cały Home Assistant i sprawdź `runtime_version: 0.3.7` w `zigbee_led_orchestrator.diagnose`. Rozszerzenie Z2M pozostaje bez zmian. Testy sprzętowe P14 i prawdziwe lampy pozostają niesprawdzone.
+
 ## 0.3.6 — ograniczenie zaległych komend i wyłączania
 
 - Rozdzielono najnowszy cel od wysłanej operacji. Na fizyczny kontroler przypada najwyżej jedna nierozstrzygnięta zwykła operacja; zmiany suwaka zastępują jeden oczekujący cel. Multicast rezerwuje kontrolery członków, a kanały przekaźnika współdzielą ograniczenie ON. Niezależne urządzenia pracują równolegle.

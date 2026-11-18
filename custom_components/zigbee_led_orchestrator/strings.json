@@ -56,7 +56,7 @@
       },
       "create_group": {
         "title": "Create group",
-        "description": "Name the group and select which added circuits belong to it. A name such as Salon creates the Zigbee2MQTT group and light entity Salon_orchestrator. A circuit already in another group is not listed. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
+        "description": "Name the group and select which added circuits belong to it. A name such as Salon creates the Zigbee2MQTT group Salon_orchestrator and the separate control entity Salon_orchestrator control. A circuit already in another group is not listed. Saving reloads the integration. Control turns on again when the catalog is back and does not replay an old ON.",
         "data": {
           "name": "Group name",
           "members": "Circuits in this group"

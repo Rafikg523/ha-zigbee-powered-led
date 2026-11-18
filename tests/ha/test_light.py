@@ -195,7 +195,10 @@ async def test_platform_creates_entities_for_configured_lights_and_group():
         "LED circuit",
         "Circuit group",
     }
-    assert all(entity.name is None for entity in entities)
+    names = {entity.unique_id: entity.name for entity in entities}
+    assert names["entry-123_light_a"] is None
+    assert names["entry-123_light_b"] is None
+    assert names["entry-123_group_a"] == "control"
 
 
 async def test_capabilities_follow_verified_runtime_metadata(light, monkeypatch):

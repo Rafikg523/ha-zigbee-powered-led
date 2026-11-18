@@ -56,7 +56,7 @@
       },
       "create_group": {
         "title": "Utwórz grupę",
-        "description": "Nazwij grupę i wybierz, które dodane obwody do niej należą. Nazwa Salon tworzy grupę Zigbee2MQTT i encję światła Salon_orchestrator. Obwód, który jest już w innej grupie, nie pojawia się na liście. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
+        "description": "Nazwij grupę i wybierz, które dodane obwody do niej należą. Nazwa Salon tworzy grupę Zigbee2MQTT Salon_orchestrator i osobną encję sterującą Salon_orchestrator sterowanie. Obwód, który jest już w innej grupie, nie pojawia się na liście. Zapis przeładowuje integrację. Sterowanie włącza się ponownie, gdy katalog wróci, i nie odtwarza starego ON.",
         "data": {
           "name": "Nazwa grupy",
           "members": "Obwody w tej grupie"

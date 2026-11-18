@@ -31,7 +31,7 @@ def orchestrator(members):
 
 async def test_named_group_is_created_and_group_state_does_not_change_intent(rig):
     await rig.setup(named_config())
-    assert rig.state("group_a").name == "Salon_orchestrator"
+    assert rig.state("group_a").name == "Salon_orchestrator control"
     rig.pilot["groups"] = [FOREIGN]
     await rig.publish_catalog()
     created = [
